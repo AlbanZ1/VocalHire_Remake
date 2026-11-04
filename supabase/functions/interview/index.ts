@@ -92,9 +92,9 @@ async function rateLimit(key: string, action: string, limit: number) {
 }
 
 /** How long a document read by the AI is reused (keyed by its exact text, so an edited CV is read fresh). */
-const ANALYSIS_TTL_MS = 30 * 86400_000;
+const ANALYSIS_TTL_MS = 7 * 86400_000;
 
-/** Model-generated analyses are cached for 30 days by input hash (heuristic results are cheap: not cached). */
+/** Model-generated analyses are cached for 7 days by input hash (heuristic results are cheap: not cached). */
 async function cached<T extends { source?: string; engine?: string }>(kind: "documents" | "review" | "job", parts: string[], compute: () => Promise<T>): Promise<T> {
   if (ai.name !== "claude") return compute();
   const hash = await sha256([kind, "v1", ...parts].join("\u0000"));
