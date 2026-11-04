@@ -30,6 +30,7 @@ import type {
 import { STARR_KEYS, clamp, mergeStarr, scoreFromStarrMap } from "./rubric.ts";
 import { questionFingerprint } from "./guardrails.ts";
 import { MAX_JOB_CHARS, cleanDocumentText, sanitizePersonName } from "./documents.ts";
+import { isPollyVoice } from "./voices.ts";
 
 export const DEFAULT_DECISION_BAND = { low: 50, high: 72 };
 export const DEFAULT_EVIDENCE_TARGET = 0.7;
@@ -72,6 +73,7 @@ export function normalizeConfig(input: Partial<InterviewConfig> & { roleTitle: s
     showLiveFeedback: mode === "practice" ? input.showLiveFeedback ?? true : false,
     jobDescription: input.jobDescription ? cleanDocumentText(input.jobDescription, MAX_JOB_CHARS) || null : null,
     candidateName: sanitizePersonName(input.candidateName),
+    voice: isPollyVoice(input.voice) ? input.voice : null,
     resumeSummary: input.resumeSummary ? String(input.resumeSummary).slice(0, 3000) : null,
     companyName: input.companyName ? String(input.companyName).slice(0, 120) : null,
     focusCompetencies: Array.isArray(input.focusCompetencies) ? input.focusCompetencies.slice(0, 8).map((s) => String(s).slice(0, 60)) : [],

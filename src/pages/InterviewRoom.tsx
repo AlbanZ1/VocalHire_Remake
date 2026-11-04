@@ -20,9 +20,10 @@ import {
   Wind,
 } from "@phosphor-icons/react";
 import { clsx } from "clsx";
-import { api, ApiError, type PublicSession, type QuestionView, type SubmitResult } from "@/lib/api";
+import { api, ApiError, fetchSpeech, type ApiResult, type PublicSession, type QuestionView, type TtsInfo } from "@/lib/api";
 import { sessionTokens } from "@/lib/sessionTokens";
-import { createSpeaker, englishVoices, loadVoices, pickDefaultVoice, ttsSupported, type Speaker } from "@/lib/speech/tts";
+import { createSpeaker, englishVoices, loadVoices, pickDefaultVoice, ttsSupported, type Speaker, type SpeechSegment } from "@/lib/speech/tts";
+import { POLLY_VOICES, VOICE_SAMPLE_TEXT, pollyVoice, voiceLabel } from "../../supabase/functions/_shared/voices.ts";
 import { SpeechRecognizer, sttSupported, type TranscriptState } from "@/lib/speech/stt";
 import { requestMedia, stopStream } from "@/lib/speech/media";
 import { FaceWatcher, type FaceStatus } from "@/lib/integrity/face";
@@ -82,6 +83,9 @@ export default function InterviewRoom() {
   // Voice
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceName, setVoiceName] = useState<string>("");
+  // Natural voices (Amazon Polly) when the server offers them; null = this device's voice.
+  const [tts, setTts] = useState<TtsInfo | null>(null);
+  const [cloudVoice, setCloudVoice] = useState<string | null>(null);
   const [rate, setRate] = useState(1);
   const [muted, setMuted] = useState(!ttsSupported());
   const [speaking, setSpeaking] = useState(false);
@@ -109,6 +113,7 @@ export default function InterviewRoom() {
   const typedStartRef = useRef<number | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const cloudVoiceRef = useRef<string | null>(null);
   const rateRef = useRef(1);
   const mutedRef = useRef(muted);
   const startedAtRef = useRef<number | null>(null);
@@ -122,6 +127,7 @@ export default function InterviewRoom() {
   rateRef.current = rate;
   mutedRef.current = muted;
   voiceRef.current = voices.find((v) => v.name === voiceName) ?? null;
+  cloudVoiceRef.current = cloudVoice;
 
   const isBusiness = session?.mode === "business";
   const integrity = session?.config.integrity;
@@ -136,6 +142,19 @@ export default function InterviewRoom() {
       try {
         const r = await api.state(sessionId, token);
         setSession(r.session);
+        if (r.tts) {
+          setTts(r.tts);
+          let saved: string | null = null;
+          try {
+            saved = localStorage.getItem("vh-voice");
+          } catch {
+            /* storage unavailable */
+          }
+          // Hiring teams choose the voice for their applicants; practice users keep their last choice.
+          const preferred = r.session.mode === "business" ? r.session.config.voice ?? r.tts.defaultVoice : saved === "device" ? null : saved ?? r.tts.defaultVoice;
+          setCloudVoice(preferred && pollyVoice(preferred) && r.tts.voices.includes(preferred) ? preferred : null);
+          setMuted(false);
+        }
         if (r.session.status === "completed") {
           if (r.session.mode === "practice") navigate(`/report/${sessionId}`, { replace: true });
           else setPhase("done");
@@ -157,6 +176,8 @@ export default function InterviewRoom() {
     });
     speakerRef.current = createSpeaker({
       voice: () => voiceRef.current,
+      cloudVoice: () => cloudVoiceRef.current,
+      fetchAudio: (seg, voice) => fetchSpeech({ voice, sessionId, text: seg.text ?? undefined, sig: seg.sig, sample: seg.sample }),
       rate: () => rateRef.current,
       muted: () => mutedRef.current,
       onStart: () => setSpeaking(true),
@@ -308,9 +329,9 @@ export default function InterviewRoom() {
   }, [answerMode, startListening]);
 
   const say = useCallback(
-    async (text: string) => {
+    async (segments: SpeechSegment[]) => {
       setPhase("asking");
-      await speakerRef.current?.speak(text);
+      await speakerRef.current?.speak(segments);
     },
     [],
   );
@@ -320,8 +341,7 @@ export default function InterviewRoom() {
       setQuestion(q);
       setSpokenLine(lead ?? q.preface ?? null);
       setTyped("");
-      const text = [lead ?? q.preface, q.text].filter(Boolean).join(" ");
-      await say(text);
+      await say([lead ? { text: lead } : { text: q.preface, sig: q.speech?.preface }, { text: q.text, sig: q.speech?.text }]);
       if (!unmounted.current) beginAnswering();
     },
     [say, beginAnswering],
@@ -330,6 +350,7 @@ export default function InterviewRoom() {
   // ---------------------------------------------------------------- start
   const start = useCallback(async () => {
     if (!session) return;
+    speakerRef.current?.unlock();
     setError(null);
     setPhase("starting");
     try {
@@ -380,12 +401,12 @@ export default function InterviewRoom() {
   }, []);
 
   const handleResult = useCallback(
-    async (res: SubmitResult) => {
+    async (res: ApiResult) => {
       if (res.type === "done") {
         setPhase("closing");
         setClosing(res.closing);
         setSpokenLine(null);
-        await speakerRef.current?.speak(res.closing);
+        await speakerRef.current?.speak([{ text: res.closing, sig: res.speech?.closing }]);
         await finish();
         if (session?.mode === "practice") navigate(`/report/${sessionId}`);
         return;
@@ -398,7 +419,7 @@ export default function InterviewRoom() {
       // clarify / redirect: same question stays pending.
       setQuestion(res.question);
       setSpokenLine(res.line);
-      await say(res.line);
+      await say([{ text: res.line, sig: res.speech?.line }]);
       if (!unmounted.current) beginAnswering();
     },
     [finish, navigate, presentQuestion, say, beginAnswering, session?.mode, sessionId],
@@ -474,7 +495,7 @@ export default function InterviewRoom() {
     recRef.current?.abort();
     setListening(false);
     faceRef.current?.setAnswering(false);
-    await say(q.text);
+    await say([{ text: q.text, sig: q.speech?.text }]);
     if (!unmounted.current) beginAnswering();
   }, [say, beginAnswering]);
 
@@ -633,13 +654,26 @@ export default function InterviewRoom() {
             voices={voices}
             voiceName={voiceName}
             setVoiceName={setVoiceName}
+            tts={tts}
+            cloudVoice={cloudVoice}
+            setCloudVoice={(v) => {
+              setCloudVoice(v);
+              try {
+                localStorage.setItem("vh-voice", v ?? "device");
+              } catch {
+                /* storage unavailable */
+              }
+            }}
             rate={rate}
             setRate={setRate}
             muted={muted}
             setMuted={setMuted}
             answerMode={answerMode}
             setAnswerMode={setAnswerMode}
-            onTestVoice={() => speakerRef.current?.speak("Hi, I'll be your interviewer today. Take your time with each answer.")}
+            onTestVoice={() => {
+              speakerRef.current?.unlock();
+              void speakerRef.current?.speak([{ text: VOICE_SAMPLE_TEXT, sample: true }]);
+            }}
             onStart={start}
             onBreathe={() => setBreathing(true)}
             error={error}
@@ -887,6 +921,9 @@ interface PrecheckProps {
   voices: SpeechSynthesisVoice[];
   voiceName: string;
   setVoiceName: (v: string) => void;
+  tts: TtsInfo | null;
+  cloudVoice: string | null;
+  setCloudVoice: (v: string | null) => void;
   rate: number;
   setRate: (v: number) => void;
   muted: boolean;
@@ -988,20 +1025,46 @@ function Precheck(p: PrecheckProps) {
       <div className="space-y-5">
         <Card className="p-6">
           <h2 className="text-base font-bold">Interviewer voice</h2>
-          {ttsSupported() ? (
+          {ttsSupported() || p.tts ? (
             <div className="mt-4 space-y-4">
               <div className="space-y-1.5">
                 <label htmlFor="voice" className="text-sm font-semibold text-fg-strong">
                   Voice
                 </label>
-                <Select id="voice" value={p.voiceName} onChange={(e) => p.setVoiceName(e.target.value)} disabled={p.muted || p.voices.length === 0}>
-                  {p.voices.length === 0 && <option value="">System default voice</option>}
-                  {p.voices.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
+                <Select
+                  id="voice"
+                  value={p.cloudVoice ? `natural:${p.cloudVoice}` : `device:${p.voiceName}`}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.startsWith("natural:")) p.setCloudVoice(v.slice(8));
+                    else {
+                      p.setCloudVoice(null);
+                      p.setVoiceName(v.slice(7));
+                    }
+                  }}
+                  disabled={p.muted}
+                >
+                  {p.tts && (
+                    <optgroup label="Natural voices">
+                      {POLLY_VOICES.filter((v) => p.tts!.voices.includes(v.id)).map((v) => (
+                        <option key={v.id} value={`natural:${v.id}`}>
+                          {voiceLabel(v)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {ttsSupported() && (
+                    <optgroup label="This device's voices">
+                      {p.voices.length === 0 && <option value="device:">System default voice</option>}
+                      {p.voices.map((v) => (
+                        <option key={v.name} value={`device:${v.name}`}>
+                          {v.name} ({v.lang})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </Select>
+                {p.tts && <p className="text-xs text-muted-fg">{p.cloudVoice ? "A natural, human-sounding voice — the same on every device." : "Your device's built-in voice. Natural voices sound more human."}</p>}
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="rate" className="flex justify-between text-sm font-semibold text-fg-strong">

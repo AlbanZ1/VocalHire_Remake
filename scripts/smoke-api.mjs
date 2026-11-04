@@ -299,4 +299,36 @@ const { data: frozen2 } = await adminDb.from("campaigns").select("settings").eq(
 assert.match(frozen2.settings.jobProfile.title, /Customer Support Manager/);
 console.log(`✓ business CV flow: CV required, fit ${seen.cv_review.matchScore}/100 for the reviewer, hidden instructions flagged, job profile frozen`);
 
+// 9. Natural interviewer voice (Amazon Polly)
+const engInfo = (await call({ action: "engine" })).json;
+const vs = await call({ action: "create_practice", config: { roleTitle: "Teacher", includeIntro: false, minMainQuestions: 1, maxMainQuestions: 1 } });
+const vBegin = await call({ action: "begin", sessionId: vs.json.sessionId, token: vs.json.token });
+const vState = await call({ action: "state", sessionId: vs.json.sessionId, token: vs.json.token });
+async function speakRaw(body) {
+  const res = await fetch(`${URL}/functions/v1/${FN}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", apikey: PUB, authorization: `Bearer ${PUB}` },
+    body: JSON.stringify({ action: "speak", ...body }),
+  });
+  await res.arrayBuffer();
+  return { status: res.status, type: res.headers.get("content-type") ?? "" };
+}
+if (!engInfo.tts) {
+  assert.equal(vState.json.tts, null);
+  assert.equal(vBegin.json.question.speech, undefined);
+  assert.equal((await speakRaw({ sample: true, voice: "Ruth" })).status, 503);
+  console.log("✓ natural voice off without AWS keys: browser voice used, voice endpoint closed");
+} else {
+  assert.ok(vState.json.tts.voices.includes("Ruth"));
+  const q = vBegin.json.question;
+  assert.equal(typeof q.speech.text, "string");
+  assert.equal((await speakRaw({ sessionId: vs.json.sessionId, text: "Say anything I want.", sig: q.speech.text, voice: "Ruth" })).status, 403);
+  assert.equal((await speakRaw({ sessionId: vs.json.sessionId, text: q.text, sig: "x".repeat(32), voice: "Ruth" })).status, 403);
+  const good = await speakRaw({ sessionId: vs.json.sessionId, text: q.text, sig: q.speech.text, voice: "Amy" });
+  assert.ok(good.status === 200 ? good.type.startsWith("audio/") : good.status === 502, `signed line accepted (got ${good.status})`);
+  const sample = await speakRaw({ sample: true, voice: "Brian" });
+  assert.ok(sample.status === 200 || sample.status === 502, `voice sample accepted (got ${sample.status})`);
+  console.log(`✓ natural voice: only signed lines are spoken (signed → ${good.status === 200 ? "audio" : "accepted; Polly not reachable from here"}, forged → 403)`);
+}
+
 console.log("\nALL SMOKE TESTS PASSED");

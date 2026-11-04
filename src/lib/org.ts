@@ -38,6 +38,8 @@ export interface CampaignSettings {
   cvRequirement?: "off" | "optional" | "required";
   /** Job profile frozen by the server at the first applicant. */
   jobProfile?: unknown;
+  /** Natural interviewer voice for applicants (Amazon Polly voice id). */
+  voice?: string | null;
 }
 
 export interface CampaignRow {

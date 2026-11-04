@@ -81,13 +81,21 @@ export interface QuestionView {
   preface: string | null;
   competency: string | null;
   progress: Progress;
+  /** Signatures that let the natural-voice endpoint speak these lines (added by the API layer). */
+  speech?: { text: string | null; preface: string | null };
+}
+
+/** Signatures for spoken lines outside a question (added by the API layer). */
+export interface LineSpeech {
+  line?: string | null;
+  closing?: string | null;
 }
 
 export type SubmitResult =
-  | { type: "question"; question: QuestionView; liveFeedback: string | null; starrCheck: Record<StarrKey, boolean> | null }
-  | { type: "clarify"; line: string; question: QuestionView }
-  | { type: "redirect"; line: string; question: QuestionView }
-  | { type: "done"; closing: string };
+  | { type: "question"; question: QuestionView; liveFeedback: string | null; starrCheck: Record<StarrKey, boolean> | null; speech?: LineSpeech }
+  | { type: "clarify"; line: string; question: QuestionView; speech?: LineSpeech }
+  | { type: "redirect"; line: string; question: QuestionView; speech?: LineSpeech }
+  | { type: "done"; closing: string; speech?: LineSpeech };
 
 export interface Clock {
   now(): number;

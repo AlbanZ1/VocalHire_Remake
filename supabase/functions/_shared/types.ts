@@ -55,6 +55,8 @@ export interface InterviewConfig {
   companyName?: string | null;
   /** Candidate's name (first name is used by the interviewer). */
   candidateName?: string | null;
+  /** Natural interviewer voice (Amazon Polly voice id) chosen by the hiring team; null = default. */
+  voice?: string | null;
   focusCompetencies?: string[];
   /** Optional fixed first question (used by single-question drills). */
   fixedFirstQuestion?: string | null;

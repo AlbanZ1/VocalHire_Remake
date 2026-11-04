@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
 import { DocumentInput } from "@/components/documents/DocumentInput";
+import { POLLY_VOICES, voiceLabel } from "../../../supabase/functions/_shared/voices.ts";
 import { useActiveOrg, type CampaignRow, type CampaignSettings } from "@/lib/org";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -48,6 +49,15 @@ export default function CampaignEditor() {
   const [closesAt, setClosesAt] = useState("");
   const [cvRequirement, setCvRequirement] = useState<NonNullable<CampaignSettings["cvRequirement"]>>("optional");
   const [suggesting, setSuggesting] = useState(false);
+  const [voice, setVoice] = useState<string>("");
+  const [naturalVoices, setNaturalVoices] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api
+      .engine()
+      .then((e) => setNaturalVoices(!!e.tts))
+      .catch(() => setNaturalVoices(false));
+  }, []);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +95,7 @@ export default function CampaignEditor() {
         setStatus(c.status);
         setClosesAt(c.closes_at ? c.closes_at.slice(0, 10) : "");
         setCvRequirement(s.cvRequirement ?? "optional");
+        setVoice(s.voice ?? "");
         setLoaded(true);
       });
   }, [campaignId]);
@@ -149,6 +160,7 @@ export default function CampaignEditor() {
       timeLimitMinutes: timeLimit,
       integrity,
       cvRequirement,
+      voice: voice || null,
     };
     // Competencies and the job profile are frozen at the first applicant; changing them starts fresh.
     const descriptionChanged = original && (original.description ?? "") !== description.trim();
@@ -384,6 +396,21 @@ export default function CampaignEditor() {
                     <option value="easy">Approachable</option>
                     <option value="standard">Standard</option>
                     <option value="hard">Demanding</option>
+                  </Select>
+                )}
+              </Field>
+              <Field
+                label="Interviewer voice"
+                hint={naturalVoices === false ? "Natural voices turn on once Amazon Polly is set up; until then applicants hear their device's voice." : "Every applicant hears this voice."}
+              >
+                {({ id, describedBy }) => (
+                  <Select id={id} value={voice} onChange={(e) => setVoice(e.target.value)} aria-describedby={describedBy}>
+                    <option value="">Default natural voice (Ruth)</option>
+                    {POLLY_VOICES.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {voiceLabel(v)}
+                      </option>
+                    ))}
                   </Select>
                 )}
               </Field>

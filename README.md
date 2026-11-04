@@ -58,6 +58,28 @@ That's it — new interviews immediately use Claude: `claude-haiku-5-5` for the 
 
 If a Claude call ever fails (network, refusal, invalid output) that single step falls back to the built-in engine, so an interview never gets stuck. Reports show which engine produced them.
 
+### 2b. Turn on natural interviewer voices (Amazon Polly, optional)
+
+Without this, the interviewer uses each visitor's built-in browser voice (free, quality varies by device). With it, every question is spoken in a natural Amazon Polly voice — the same on every device — and anything that fails falls back to the browser voice automatically.
+
+1. In AWS → **IAM → Users → Create user** (e.g. `vocalhire-polly`), attach this inline policy, then create an **access key** for it:
+
+   ```json
+   { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow", "Action": "polly:SynthesizeSpeech", "Resource": "*" }] }
+   ```
+
+2. In Supabase → **Edge Functions → Secrets**, add:
+
+| Secret | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | the user's access key ID |
+| `AWS_SECRET_ACCESS_KEY` | the user's secret access key |
+| `VOCALHIRE_POLLY_REGION` | optional, default `eu-central-1` (Frankfurt; has every generative voice) |
+| `VOCALHIRE_TTS_ENGINE` | optional: `generative` (default, most natural, ~$30 per 1M characters) or `neural` (~$16 per 1M) |
+| `VOCALHIRE_TTS` | optional: `off` to switch natural voices off without removing the keys |
+
+Voices: Ruth (default), Matthew, Danielle, Stephen (American), Amy, Brian (British), Olivia (Australian), Kajal (Indian), Niamh (Irish), Ayanda (South African). Candidates pick one in the device check; hiring teams set one voice for all applicants in the interview settings. A typical interview speaks about 3,000–4,000 characters (roughly 10–12¢ generative, 5–6¢ neural). The voice endpoint only speaks lines the API itself signed for that interview, and lines that repeat (greetings, closings, the voice sample) are stored as audio and reused.
+
 ### 3. Deploy the web app
 
 Pick one — all three are pre-configured:
@@ -191,7 +213,7 @@ Trust and safety:
 - Supportive / professional / challenging interviewer; gentle / standard / tough; past examples vs scenarios
 - Upload your CV and any job posting; the interviewer uses your name, your experience and the job's requirements; choose focus areas
 - CV review against a specific job: match score, evidence, gaps, rewrites and a tailored summary
-- Voice interviewer (browser TTS, voice choice and speed), live transcript, typing fallback
+- Voice interviewer: natural Amazon Polly voices (10 accents) or the browser's voice, adjustable speed, live transcript, typing fallback
 - Calm warm-up (box breathing), pause, repeat question, captions-only mode, no countdown pressure
 - Coaching notes + live STARR checklist after each story
 - Report: STARR profile, competencies, strengths first, growth areas, practice plan, delivery (pace, fillers, think time, eye contact), quoted evidence per element, a better-answer outline built from your own story, one-click drill on any question, save as PDF

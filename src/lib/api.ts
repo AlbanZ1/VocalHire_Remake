@@ -1,7 +1,7 @@
 // Typed client for the `interview` edge function.
 import { supabase } from "./supabase";
 import { INTERVIEW_FUNCTION, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/config";
-import type { QuestionView, SubmitResult } from "../../supabase/functions/_shared/orchestrator.ts";
+import type { LineSpeech, QuestionView, SubmitResult } from "../../supabase/functions/_shared/orchestrator.ts";
 import type {
   CvProfile,
   CvReview,
@@ -15,7 +15,13 @@ import type {
   TurnRow,
 } from "../../supabase/functions/_shared/types.ts";
 
-export type { QuestionView, SubmitResult, CvProfile, CvReview, JobProfile };
+export type { QuestionView, SubmitResult, LineSpeech, CvProfile, CvReview, JobProfile };
+
+/** Natural interviewer voices (Amazon Polly), when the server has them set up. */
+export interface TtsInfo {
+  voices: string[];
+  defaultVoice: string;
+}
 
 export type CvRequirement = "off" | "optional" | "required";
 
@@ -46,6 +52,7 @@ export interface PublicSession {
     includeIntro: boolean;
     companyName: string | null;
     integrity: IntegritySettings;
+    voice: string | null;
   };
   monitored: string[];
 }
@@ -92,19 +99,19 @@ export interface SavedReview {
   createdAt?: string;
 }
 
-async function call<T>(action: string, body: Record<string, unknown> = {}, opts: { keepalive?: boolean } = {}): Promise<T> {
+async function headers(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const bearer = data.session?.access_token ?? SUPABASE_PUBLISHABLE_KEY;
+  return { "Content-Type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${bearer}` };
+}
+
+async function call<T>(action: string, body: Record<string, unknown> = {}, opts: { keepalive?: boolean } = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${SUPABASE_URL}/functions/v1/${INTERVIEW_FUNCTION}`, {
       method: "POST",
       keepalive: opts.keepalive,
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${bearer}`,
-      },
+      headers: await headers(),
       body: JSON.stringify({ action, ...body }),
     });
   } catch {
@@ -143,8 +150,23 @@ export interface PracticeConfigInput {
   integrity?: IntegritySettings;
 }
 
+/** Interviewer line as audio (Amazon Polly). Only lines the API signed, or the fixed voice sample. */
+export async function fetchSpeech(input: { voice: string; sessionId?: string; text?: string; sig?: string | null; sample?: boolean }): Promise<Blob> {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${INTERVIEW_FUNCTION}`, {
+    method: "POST",
+    headers: await headers(),
+    body: JSON.stringify({ action: "speak", ...input }),
+  });
+  const type = res.headers.get("content-type") ?? "";
+  if (!res.ok || !type.startsWith("audio/")) throw new ApiError(res.status, "tts", "The natural voice is unavailable.");
+  return res.blob();
+}
+
+export type ApiResult = SubmitResult & { speech?: LineSpeech };
+
 export const api = {
-  engine: () => call<{ engine: "claude" | "heuristic"; model: string | null }>("engine"),
+  engine: () =>
+    call<{ engine: "claude" | "heuristic"; model: string | null; turnModel?: string | null; tts: (TtsInfo & { provider: "polly"; engine: string }) | null }>("engine"),
   createPractice: (config: PracticeConfigInput, cvText?: string) => call<{ sessionId: string; token: string }>("create_practice", { config, cvText }),
   campaignInfo: (token: string) => call<CampaignInfo>("campaign_info", { token }),
   createCampaignSession: (token: string, name: string, email: string, consent: boolean, cvText?: string) =>
@@ -152,14 +174,14 @@ export const api = {
   analyzeDocuments: (docs: { cvText?: string; jobText?: string }) => call<DocumentAnalysis>("analyze_documents", docs),
   reviewCv: (input: { cvText: string; jobText?: string } | { sessionId: string; token?: string }) => call<SavedReview & { token: string }>("review_cv", input),
   getCvReview: (id: string, token?: string) => call<SavedReview>("get_cv_review", { id, token }),
-  state: (sessionId: string, token?: string) => call<{ session: PublicSession; question: QuestionView | null }>("state", { sessionId, token }),
+  state: (sessionId: string, token?: string) => call<{ session: PublicSession; question: QuestionView | null; tts: TtsInfo | null }>("state", { sessionId, token }),
   begin: (sessionId: string, token?: string) =>
     call<{ session: PublicSession; question?: QuestionView; done?: true }>("begin", { sessionId, token }),
   answer: (sessionId: string, token: string | undefined, seq: number, answer: string, mode: "voice" | "text", metrics: Partial<SpeechMetrics>) =>
-    call<SubmitResult>("answer", { sessionId, token, seq, answer, mode, metrics }),
+    call<ApiResult>("answer", { sessionId, token, seq, answer, mode, metrics }),
   events: (sessionId: string, token: string | undefined, events: IntegrityEventInput[], keepalive = false) =>
     call<{ stored: number }>("events", { sessionId, token, events }, { keepalive }),
-  end: (sessionId: string, token?: string, reason?: "time_limit") => call<SubmitResult>("end", { sessionId, token, reason }),
+  end: (sessionId: string, token?: string, reason?: "time_limit") => call<ApiResult>("end", { sessionId, token, reason }),
   report: (sessionId: string, token?: string) => call<ReportResponse>("report", { sessionId, token }),
   claim: (sessions: { id: string; token: string }[], reviews: { id: string; token: string }[] = []) =>
     call<{ claimed: number; reviews: number }>("claim", { sessions, reviews }),

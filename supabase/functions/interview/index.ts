@@ -13,6 +13,9 @@ import { sanitizeShortText } from "../_shared/guardrails.ts";
 import { monitoredSignals } from "../_shared/integrity.ts";
 import { MAX_CV_CHARS, MAX_JOB_CHARS, cleanDocumentText, sanitizePersonName, stripInjection } from "../_shared/documents.ts";
 import type { CvProfile, CvReview, InterviewConfig, InterviewPlan, IntegritySettings, JobProfile, SessionRow } from "../_shared/types.ts";
+import { DEFAULT_POLLY_VOICE, POLLY_VOICES, VOICE_SAMPLE_TEXT, isPollyVoice, pollyVoice, type PollyEngine } from "../_shared/voices.ts";
+import { PollyError, synthesizeSpeech, type AwsCredentials } from "../_shared/polly.ts";
+import { base64ToBytes, bytesToBase64, createSpeechSigner } from "../_shared/voiceSign.ts";
 import { SupabaseStore } from "./store.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -88,6 +91,8 @@ async function rateLimit(key: string, action: string, limit: number) {
     const old = new Date(Date.now() - 2 * 86400_000).toISOString();
     await admin.from("api_rate_events").delete().lt("created_at", old);
     await admin.from("document_analyses").delete().lt("created_at", new Date(Date.now() - ANALYSIS_TTL_MS).toISOString());
+    await admin.from("tts_cache").delete().lt("last_used_at", new Date(Date.now() - 30 * 86400_000).toISOString());
+    await admin.from("tts_cache").delete().is("audio_b64", null).lt("created_at", new Date(Date.now() - 7 * 86400_000).toISOString());
   }
 }
 
@@ -153,6 +158,73 @@ async function background(p: Promise<unknown>) {
   const safe = p.catch((e) => console.error("[background]", e instanceof Error ? e.message : e));
   if (rt?.waitUntil) rt.waitUntil(safe);
   else await safe;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Natural interviewer voice (Amazon Polly)
+// ---------------------------------------------------------------------------------------------
+// On when AWS credentials are set as secrets; otherwise the browser's own voice is used.
+const POLLY: AwsCredentials | null = (() => {
+  const accessKeyId = Deno.env.get("AWS_ACCESS_KEY_ID");
+  const secretAccessKey = Deno.env.get("AWS_SECRET_ACCESS_KEY");
+  if (!accessKeyId || !secretAccessKey || Deno.env.get("VOCALHIRE_TTS") === "off") return null;
+  return {
+    accessKeyId,
+    secretAccessKey,
+    sessionToken: Deno.env.get("AWS_SESSION_TOKEN") || undefined,
+    // Frankfurt has every generative voice and is close to the EU database.
+    region: Deno.env.get("VOCALHIRE_POLLY_REGION") || Deno.env.get("AWS_REGION") || "eu-central-1",
+  };
+})();
+const TTS_ENGINE: PollyEngine = Deno.env.get("VOCALHIRE_TTS_ENGINE") === "neural" ? "neural" : "generative";
+const MAX_SPOKEN_CHARS = 1200;
+const speechSigner = createSpeechSigner(SERVICE_KEY);
+
+function ttsInfo(s: SessionRow) {
+  if (!POLLY) return null;
+  return { voices: POLLY_VOICES.map((v) => v.id), defaultVoice: isPollyVoice(s.config.voice) ? s.config.voice : DEFAULT_POLLY_VOICE };
+}
+
+/** Attach signatures to every line the client may speak, so the voice endpoint can verify them. */
+async function withSpeech<T>(sessionId: string, result: T): Promise<T> {
+  if (!POLLY || !result || typeof result !== "object") return result;
+  const out = { ...(result as Record<string, unknown>) };
+  const sign = async (t: unknown) => (typeof t === "string" && t.trim() ? speechSigner.sign(sessionId, t) : null);
+  const q = out.question as { text?: string; preface?: string | null } | null | undefined;
+  if (q && typeof q === "object") out.question = { ...q, speech: { text: await sign(q.text), preface: await sign(q.preface) } };
+  const line = await sign(out.line);
+  const closing = await sign(out.closing);
+  if (line || closing) out.speech = { line, closing };
+  return out as T;
+}
+
+/**
+ * MP3 for a line, reusing stored audio for lines that are spoken again and again (greetings,
+ * acknowledgements, closings, the voice sample). A line's audio is stored only on its second
+ * request, so one-off personalised questions are never kept; the text itself is never stored.
+ */
+async function speakCached(voiceId: string, text: string): Promise<Uint8Array<ArrayBuffer>> {
+  const voice = pollyVoice(voiceId)!;
+  const hash = await sha256(["tts", "v1", voice.id, TTS_ENGINE, text].join("\u0000"));
+  const { data } = await admin.from("tts_cache").select("audio_b64, hits").eq("hash", hash).maybeSingle();
+  if (data?.audio_b64) {
+    await background(Promise.resolve(admin.from("tts_cache").update({ hits: (data.hits ?? 1) + 1, last_used_at: new Date().toISOString() }).eq("hash", hash)));
+    return base64ToBytes(data.audio_b64);
+  }
+  let out: { audio: Uint8Array<ArrayBuffer>; engine: PollyEngine };
+  try {
+    out = await synthesizeSpeech(POLLY!, { text, voiceId: voice.id, engine: TTS_ENGINE, languageCode: voice.languageCode });
+  } catch (e) {
+    console.error("[polly]", e instanceof PollyError ? `${e.status} ${e.type}: ${e.message}` : e);
+    throw new HttpError(502, "tts_failed", "The natural voice is unavailable right now.");
+  }
+  if (text.length <= 400 && out.audio.length <= 400_000) {
+    const store = data
+      ? admin.from("tts_cache").update({ audio_b64: bytesToBase64(out.audio), engine: out.engine, hits: (data.hits ?? 1) + 1, last_used_at: new Date().toISOString() }).eq("hash", hash)
+      : admin.from("tts_cache").upsert({ hash, voice: voice.id, engine: out.engine, chars: text.length, hits: 1 }, { onConflict: "hash", ignoreDuplicates: true });
+    await background(Promise.resolve(store));
+  }
+  return out.audio;
 }
 
 async function callerKey(req: Request): Promise<{ key: string; userId: string | null }> {
@@ -269,6 +341,8 @@ interface CampaignSettings {
   cvRequirement?: "off" | "optional" | "required";
   /** Job profile frozen at the first applicant (analysed once per campaign). */
   jobProfile?: JobProfile;
+  /** Natural interviewer voice for every applicant (Polly voice id). */
+  voice?: string | null;
 }
 
 interface CampaignRow {
@@ -321,6 +395,7 @@ function campaignConfig(c: CampaignRow): InterviewConfig {
       companyName: c.organizations?.name ?? null,
       focusCompetencies: c.competencies ?? [],
       includeIntro: true,
+      voice: s.voice ?? null,
       integrity: { ...preset, ...(s.integrity ?? {}), level } as IntegritySettings,
     },
     "business",
@@ -375,6 +450,7 @@ function publicSession(s: SessionRow) {
       includeIntro: c.includeIntro,
       companyName: c.companyName,
       integrity: c.integrity,
+      voice: c.voice ?? null,
     },
     monitored: monitoredSignals(c.integrity),
   };
@@ -391,6 +467,7 @@ const actions: Record<string, Handler> = {
       engine: ai.name,
       model: ai.name === "claude" ? Deno.env.get("VOCALHIRE_MODEL") || DEFAULT_MODEL : null,
       turnModel: ai.name === "claude" ? Deno.env.get("VOCALHIRE_TURN_MODEL") || DEFAULT_TURN_MODEL : null,
+      tts: POLLY ? { provider: "polly", engine: TTS_ENGINE, voices: POLLY_VOICES.map((v) => v.id), defaultVoice: DEFAULT_POLLY_VOICE } : null,
     };
   },
 
@@ -526,27 +603,30 @@ const actions: Record<string, Handler> = {
 
   async state(req, body) {
     const { session } = await loadAuthorized(req, body, ["owner", "token"]);
-    if (await interview.recover(session)) return { session: publicSession(await interview.load(session.id)), question: null };
-    return { session: publicSession(session), question: interview.current(session) };
+    if (await interview.recover(session)) return { session: publicSession(await interview.load(session.id)), question: null, tts: ttsInfo(session) };
+    return withSpeech(session.id, { session: publicSession(session), question: interview.current(session), tts: ttsInfo(session) });
   },
 
   async begin(req, body) {
     const { session } = await loadAuthorized(req, body, ["owner", "token"]);
     const r = await interview.begin(session);
     const fresh = await interview.load(session.id);
-    return { session: publicSession(fresh), ...("question" in r ? { question: r.question } : { done: true }) };
+    return withSpeech(session.id, { session: publicSession(fresh), ...("question" in r ? { question: r.question } : { done: true }) });
   },
 
   async answer(req, body) {
     const { session } = await loadAuthorized(req, body, ["owner", "token"]);
     const answer = typeof body.answer === "string" ? body.answer : "";
     if (answer.length > 20_000) throw new HttpError(413, "too_long", "That answer is too long.");
-    return interview.submitAnswer(session, {
-      seq: Number(body.seq),
-      answer,
-      mode: body.mode === "text" ? "text" : "voice",
-      metrics: (body.metrics ?? null) as never,
-    });
+    return withSpeech(
+      session.id,
+      await interview.submitAnswer(session, {
+        seq: Number(body.seq),
+        answer,
+        mode: body.mode === "text" ? "text" : "voice",
+        metrics: (body.metrics ?? null) as never,
+      }),
+    );
   },
 
   async events(req, body) {
@@ -558,7 +638,7 @@ const actions: Record<string, Handler> = {
   async end(req, body) {
     const { session } = await loadAuthorized(req, body, ["owner", "token"]);
     const reason = body.reason === "time_limit" ? "time_limit" : "ended_by_candidate";
-    return interview.end(session, reason);
+    return withSpeech(session.id, await interview.end(session, reason));
   },
 
   async report(req, body) {
@@ -602,6 +682,26 @@ const actions: Record<string, Handler> = {
       reviews += data?.length ?? 0;
     }
     return { claimed, reviews };
+  },
+
+  /** Interviewer line as MP3 (Amazon Polly). Only speaks lines the API signed, or the fixed voice sample. */
+  async speak(req, body) {
+    if (!POLLY) throw new HttpError(503, "tts_unavailable", "Natural voices aren't set up.");
+    const voice = isPollyVoice(body.voice) ? body.voice : DEFAULT_POLLY_VOICE;
+    let text: string;
+    if (body.sample === true) {
+      text = VOICE_SAMPLE_TEXT;
+      const { key } = await callerKey(req);
+      await rateLimit(key, "speak_sample", 60);
+    } else {
+      const sessionId = String(body.sessionId ?? "");
+      text = typeof body.text === "string" ? body.text : "";
+      if (!/^[0-9a-f-]{36}$/i.test(sessionId) || !text.trim() || text.length > MAX_SPOKEN_CHARS) throw new HttpError(400, "invalid", "Invalid speech request.");
+      if (!(await speechSigner.verify(sessionId, text, body.sig))) throw new HttpError(403, "forbidden", "This line can't be spoken.");
+      await rateLimit(`s:${sessionId}`, "speak", 300);
+    }
+    const audio = await speakCached(voice, text);
+    return new Response(audio, { headers: { ...CORS, "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=86400" } });
   },
 
   async analyze_documents(req, body) {
@@ -677,7 +777,8 @@ Deno.serve(async (req) => {
     }
     const handler = actions[String(body.action ?? "")];
     if (!handler) throw new HttpError(400, "unknown_action", "Unknown action.");
-    return json(await handler(req, body));
+    const out = await handler(req, body);
+    return out instanceof Response ? out : json(out);
   } catch (e) {
     if (e instanceof HttpError) return json({ error: { code: e.code, message: e.message } }, e.status);
     if (e instanceof InterviewError) {

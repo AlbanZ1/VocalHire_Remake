@@ -22,6 +22,13 @@ export default function Privacy() {
           ],
         },
         {
+          h: "The interviewer's voice",
+          p: [
+            "When natural voices are switched on, the interviewer's questions are turned into speech by Amazon Polly (Amazon Web Services). Only the interviewer's own lines are sent — never your answers, your voice or your camera.",
+            "Lines that are spoken again and again, like greetings and closings, are kept as audio for up to 30 days so they don't have to be generated twice. The text of those lines isn't stored with them.",
+          ],
+        },
+        {
           h: "What we never store",
           p: ["Audio recordings or video. Speech is turned into text in your browser (using your browser's speech recognition service), and camera frames are analysed on your device and immediately discarded."],
         },
