@@ -182,7 +182,7 @@ export default function Landing() {
       </Section>
 
       {/* Integrity */}
-      <Section id="integrity" eyebrow="Anti-cheating" title="Answers from ChatGPT don't survive a real conversation" intro="No single check stops every cheater, so VocalHire layers them. Each signal is weak on its own; together they give reviewers a clear picture." tint>
+      <Section id="integrity" eyebrow="Anti-cheating" title="AI-written answers don't survive a real conversation" intro="No single check stops every cheater, so VocalHire layers them. Each signal is weak on its own; together they give reviewers a clear picture." tint>
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           <Feature icon={<GitBranch size={24} />} title="Adaptive depth probes" body="Polished-but-generic answers trigger follow-ups only someone who lived the story can answer. A big drop in detail is flagged." />
           <Feature icon={<Microphone size={24} />} title="Voice-only answers" body="In strict mode applicants must speak, so text can't be pasted from an AI tool. Long silences before suspiciously fluent answers are noted." />
