@@ -3,19 +3,23 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "VocalHire — AI voice interviewer for practice and hiring, with STARR scoring and integrity monitoring.",
+  "description": "VocalHire \u2014 AI voice interviewer for practice and hiring, with STARR scoring and integrity monitoring.",
   "scripts": {
+    "postinstall": "node scripts/copy-vision-assets.mjs",
+    "predev": "node scripts/copy-vision-assets.mjs",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "prebuild": "node scripts/copy-vision-assets.mjs",
+    "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/spa-fallback.mjs",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
-    "functions:serve": "supabase functions serve --no-verify-jwt --env-file supabase/functions/.env"
+    "functions:bundle-local": "node scripts/bundle-local-function.mjs",
+    "smoke": "node scripts/smoke-api.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.2.2",

@@ -19,3 +19,4 @@ supabase/functions/.local-ca.crt
 supabase/functions/interview-local
 __pycache__/
 *.pyc
+public/mediapipe

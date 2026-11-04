@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+/*
+ * VocalHire design tokens — from design-system/vocalhire/MASTER.md (UI UX Pro Max).
+ * Light palette: Professional blue + success green (Job Board/Recruitment profile).
+ * Dark palette: same roles re-tuned for ≥4.5:1 text contrast on dark surfaces.
+ */
+:root {
+  color-scheme: light;
+  --vh-bg: #f0f9ff;
+  --vh-surface: #ffffff;
+  --vh-surface-2: #f6fafd;
+  --vh-fg: #0c4a6e;
+  --vh-fg-strong: #082f49;
+  --vh-muted: #e7eff5;
+  --vh-muted-fg: #475569;
+  --vh-border: #bae6fd;
+  --vh-border-soft: #dcebf5;
+  --vh-primary: #0369a1;
+  --vh-on-primary: #ffffff;
+  --vh-primary-hover: #075985;
+  --vh-primary-soft: #e0f2fe;
+  --vh-secondary: #0ea5e9;
+  --vh-on-secondary: #0f172a;
+  --vh-accent: #16a34a;
+  --vh-on-accent: #000000;
+  --vh-accent-hover: #15803d;
+  --vh-destructive: #dc2626;
+  --vh-on-destructive: #ffffff;
+  --vh-warning: #b45309;
+  --vh-warning-bg: #fef3c7;
+  --vh-success: #15803d;
+  --vh-success-bg: #dcfce7;
+  --vh-danger-bg: #fee2e2;
+  --vh-ring: #0369a1;
+  /* Chart tokens — validated with the dataviz palette validator (light surface #fff). */
+  --vh-chart-1: #0369a1;
+  --vh-chart-track: #e0f2fe;
+  --vh-chart-grid: #e7eff5;
+  --vh-shadow: 0 1px 2px rgb(8 47 73 / 0.06), 0 1px 3px rgb(8 47 73 / 0.04);
+  --vh-shadow-lg: 0 10px 30px -12px rgb(8 47 73 / 0.25);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --vh-bg: #0b1220;
+  --vh-surface: #111b2e;
+  --vh-surface-2: #0f1828;
+  --vh-fg: #e0f2fe;
+  --vh-fg-strong: #f0f9ff;
+  --vh-muted: #1b2a44;
+  --vh-muted-fg: #a8b8cc;
+  --vh-border: #24405f;
+  --vh-border-soft: #1d3150;
+  --vh-primary: #38bdf8;
+  --vh-on-primary: #082f49;
+  --vh-primary-hover: #7dd3fc;
+  --vh-primary-soft: #0c2a43;
+  --vh-secondary: #0ea5e9;
+  --vh-on-secondary: #0f172a;
+  --vh-accent: #22c55e;
+  --vh-on-accent: #04120a;
+  --vh-accent-hover: #4ade80;
+  --vh-destructive: #f87171;
+  --vh-on-destructive: #1f0707;
+  --vh-warning: #fbbf24;
+  --vh-warning-bg: #3a2a06;
+  --vh-success: #4ade80;
+  --vh-success-bg: #0b2e1a;
+  --vh-danger-bg: #3b1111;
+  --vh-ring: #7dd3fc;
+  /* Dark chart series re-stepped to #0284c7 (sky-400 fails the dark lightness band). */
+  --vh-chart-1: #0284c7;
+  --vh-chart-track: #0c2a43;
+  --vh-chart-grid: #1b2a44;
+  --vh-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --vh-shadow-lg: 0 10px 30px -12px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-bg: var(--vh-bg);
+  --color-surface: var(--vh-surface);
+  --color-surface-2: var(--vh-surface-2);
+  --color-fg: var(--vh-fg);
+  --color-fg-strong: var(--vh-fg-strong);
+  --color-muted: var(--vh-muted);
+  --color-muted-fg: var(--vh-muted-fg);
+  --color-border: var(--vh-border);
+  --color-border-soft: var(--vh-border-soft);
+  --color-primary: var(--vh-primary);
+  --color-on-primary: var(--vh-on-primary);
+  --color-primary-hover: var(--vh-primary-hover);
+  --color-primary-soft: var(--vh-primary-soft);
+  --color-secondary: var(--vh-secondary);
+  --color-on-secondary: var(--vh-on-secondary);
+  --color-accent: var(--vh-accent);
+  --color-on-accent: var(--vh-on-accent);
+  --color-accent-hover: var(--vh-accent-hover);
+  --color-destructive: var(--vh-destructive);
+  --color-on-destructive: var(--vh-on-destructive);
+  --color-warning: var(--vh-warning);
+  --color-warning-bg: var(--vh-warning-bg);
+  --color-success: var(--vh-success);
+  --color-success-bg: var(--vh-success-bg);
+  --color-danger-bg: var(--vh-danger-bg);
+  --color-ring: var(--vh-ring);
+  --color-chart-1: var(--vh-chart-1);
+  --color-chart-track: var(--vh-chart-track);
+  --color-chart-grid: var(--vh-chart-grid);
+  --shadow-card: var(--vh-shadow);
+  --shadow-pop: var(--vh-shadow-lg);
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+    font-size: 16px;
+    line-height: 1.5;
+    min-height: 100dvh;
+  }
+  h1, h2, h3, h4 {
+    @apply text-fg-strong;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--vh-ring);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button, [role="button"], a, summary, label[for], select {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  ::selection {
+    background: var(--vh-primary-soft);
+  }
+}
+
+@layer components {
+  .vh-card {
+    @apply rounded-xl border border-border-soft bg-surface shadow-card;
+  }
+  .vh-skip {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-4 focus:py-2 focus:shadow-pop;
+  }
+}
+
+@keyframes vh-pulse-soft {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.vh-pulse {
+  animation: vh-pulse-soft 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body { background: #fff; color: #0c4a6e; }
+  .no-print { display: none !important; }
+  .vh-card { box-shadow: none; break-inside: avoid; }
+}
