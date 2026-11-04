@@ -87,16 +87,19 @@ async function rateLimit(key: string, action: string, limit: number) {
   if (Math.random() < 0.02) {
     const old = new Date(Date.now() - 2 * 86400_000).toISOString();
     await admin.from("api_rate_events").delete().lt("created_at", old);
-    await admin.from("document_analyses").delete().lt("created_at", old);
+    await admin.from("document_analyses").delete().lt("created_at", new Date(Date.now() - ANALYSIS_TTL_MS).toISOString());
   }
 }
 
-/** Model-generated analyses are cached for 24h by input hash (heuristic results are cheap: not cached). */
+/** How long a document read by the AI is reused (keyed by its exact text, so an edited CV is read fresh). */
+const ANALYSIS_TTL_MS = 30 * 86400_000;
+
+/** Model-generated analyses are cached for 30 days by input hash (heuristic results are cheap: not cached). */
 async function cached<T extends { source?: string; engine?: string }>(kind: "documents" | "review" | "job", parts: string[], compute: () => Promise<T>): Promise<T> {
   if (ai.name !== "claude") return compute();
   const hash = await sha256([kind, "v1", ...parts].join("\u0000"));
   const { data } = await admin.from("document_analyses").select("result, created_at").eq("hash", hash).maybeSingle();
-  if (data && Date.parse(data.created_at) > Date.now() - 86400_000) return data.result as T;
+  if (data && Date.parse(data.created_at) > Date.now() - ANALYSIS_TTL_MS) return data.result as T;
   const result = await compute();
   if ((result.source ?? result.engine) === "claude") {
     await admin.from("document_analyses").upsert({ hash, kind, result, engine: "claude", created_at: new Date().toISOString() });
