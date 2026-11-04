@@ -427,10 +427,3 @@ enabled = true
 # authenticates callers itself (user JWT or a per-session secret token).
 verify_jwt = false
 import_map = "./functions/interview/deno.json"
-
-# Local-only bundled copy used for offline testing (see scripts/bundle-local-function.mjs).
-# The directory is gitignored; it is never deployed.
-[functions.interview-local]
-enabled = true
-verify_jwt = false
-import_map = "./functions/interview-local/deno.json"

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import { ArrowRight, CheckCircle, Lightbulb, Printer, Target, TrendUp, UserPlus, Warning } from "@phosphor-icons/react";
+import { Link, useNavigate, useParams } from "react-router";
+import { ArrowRight, CheckCircle, Lightbulb, Printer, Target, Trash, TrendUp, UserPlus, Warning } from "@phosphor-icons/react";
+import { supabase } from "@/lib/supabase";
+import { Dialog } from "@/components/ui/Dialog";
+import { useToast } from "@/components/ui/Toast";
 import { api, type ReportResponse } from "@/lib/api";
 import { sessionTokens } from "@/lib/sessionTokens";
 import { useAuth } from "@/lib/auth";
@@ -15,6 +18,10 @@ import { CompetencySummary, DeliveryStats, EngineNote, QuestionBreakdown, StarrS
 export default function Report() {
   const { sessionId = "" } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [data, setData] = useState<ReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -64,6 +71,19 @@ export default function Report() {
   const n = report.narrative;
   const noAnswers = report.questions.length === 0;
 
+  async function deleteSession() {
+    setDeleting(true);
+    const { data: rows, error } = await supabase.from("interview_sessions").delete().eq("id", sessionId).select("id");
+    setDeleting(false);
+    setConfirmDelete(false);
+    if (error || !rows?.length) {
+      toast("Only practice interviews saved to your account can be deleted.", "error");
+      return;
+    }
+    toast("Interview deleted", "success");
+    navigate("/app");
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 sm:py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -78,6 +98,11 @@ export default function Report() {
           <Button variant="outline" icon={<Printer size={18} />} onClick={() => window.print()}>
             Save as PDF
           </Button>
+          {user && session.mode === "practice" && (
+            <Button variant="ghost" icon={<Trash size={18} />} onClick={() => setConfirmDelete(true)}>
+              Delete
+            </Button>
+          )}
           <ButtonLink to={`/practice/new?role=${encodeURIComponent(session.roleTitle)}&seniority=${session.config.seniority}`} variant="cta" icon={<ArrowRight size={18} />}>
             Practise again
           </ButtonLink>
@@ -199,6 +224,22 @@ export default function Report() {
           </section>
         </>
       )}
+      <Dialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete this interview?"
+        description="The transcript, scores and feedback will be permanently deleted. This can't be undone."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" loading={deleting} onClick={deleteSession}>
+              Delete permanently
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }
