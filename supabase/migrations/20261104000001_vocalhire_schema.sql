@@ -117,6 +117,7 @@ create table public.interview_session_secrets (
   session_id uuid primary key references public.interview_sessions (id) on delete cascade,
   access_token_hash text not null,
   client_ip_hash text,
+  campaign_id uuid references public.campaigns (id) on delete cascade,
   created_at timestamptz not null default now()
 );
 create index interview_session_secrets_ip_idx on public.interview_session_secrets (client_ip_hash, created_at desc);

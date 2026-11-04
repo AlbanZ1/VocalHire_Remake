@@ -446,6 +446,8 @@ export default function InterviewRoom() {
       setError(null);
       setPhase("thinking");
       try {
+        // Make sure the server has every integrity signal before it may finalise the interview.
+        await monitorRef.current?.flush();
         const res = await api.answer(sessionId, token, q.seq, text, overrideText !== undefined ? "text" : answerMode, metrics);
         await handleResult(res);
       } catch (e) {
@@ -499,6 +501,7 @@ export default function InterviewRoom() {
     recRef.current?.abort();
     setPhase("thinking");
     try {
+      await monitorRef.current?.flush();
       const res = await api.end(sessionId, token);
       await handleResult(res);
     } catch (e) {
@@ -556,10 +559,12 @@ export default function InterviewRoom() {
           </div>
           <div className="ml-auto flex items-center gap-2">
             {question && ["asking", "answering", "thinking"].includes(phase) && (
-              <Badge tone="info" className="hidden sm:inline-flex">
+              <span className="hidden sm:inline-flex">
+              <Badge tone="info">
                 {question.kind === "intro" ? "Warm-up" : question.kind === "follow_up" ? `Question ${question.progress.mainAsked} · follow-up` : `Question ${question.progress.mainAsked}`}
                 {question.progress.phase === "extension" ? " · extra round" : ""}
               </Badge>
+              </span>
             )}
             {startedAtRef.current && ["asking", "answering", "thinking"].includes(phase) && (
               <span className="rounded-lg bg-muted px-2.5 py-1 text-sm font-semibold tabular-nums text-fg-strong" aria-label="Elapsed time">
@@ -989,7 +994,8 @@ function Precheck(p: PrecheckProps) {
                 <label htmlFor="voice" className="text-sm font-semibold text-fg-strong">
                   Voice
                 </label>
-                <Select id="voice" value={p.voiceName} onChange={(e) => p.setVoiceName(e.target.value)} disabled={p.muted}>
+                <Select id="voice" value={p.voiceName} onChange={(e) => p.setVoiceName(e.target.value)} disabled={p.muted || p.voices.length === 0}>
+                  {p.voices.length === 0 && <option value="">System default voice</option>}
                   {p.voices.map((v) => (
                     <option key={v.name} value={v.name}>
                       {v.name} ({v.lang})

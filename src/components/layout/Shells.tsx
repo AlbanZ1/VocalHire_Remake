@@ -31,9 +31,11 @@ export function PublicHeader() {
             </ButtonLink>
           ) : (
             <>
-              <ButtonLink to="/login" size="sm" variant="ghost" className="hidden sm:inline-flex">
-                Sign in
-              </ButtonLink>
+              <span className="hidden sm:inline-flex">
+                <ButtonLink to="/login" size="sm" variant="ghost">
+                  Sign in
+                </ButtonLink>
+              </span>
               <ButtonLink to="/practice/new" size="sm" variant="cta">
                 Practise free
               </ButtonLink>
@@ -77,9 +79,35 @@ export function PublicLayout() {
   );
 }
 
+/** Minimal chrome for job applicants: brand + theme only, no marketing navigation. */
+export function MinimalLayout() {
+  return (
+    <div className="flex min-h-dvh flex-col">
+      <header className="border-b border-border-soft bg-surface">
+        <a href="#main" className="vh-skip">
+          Skip to content
+        </a>
+        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+          <Brand to="#" />
+          <ThemeToggle />
+        </div>
+      </header>
+      <main id="main" className="flex-1">
+        <Outlet />
+      </main>
+      <footer className="py-6 text-center text-xs text-muted-fg">
+        Interviews powered by VocalHire ·{" "}
+        <Link to="/privacy" className="underline-offset-2 hover:underline">
+          Privacy & monitoring
+        </Link>
+      </footer>
+    </div>
+  );
+}
+
 const navItems = [
   { to: "/app", label: "Practice", icon: <ChartLineUp size={20} />, end: true },
-  { to: "/practice/new", label: "New interview", icon: <Microphone size={20} /> },
+  { to: "/practice/new", label: "New practice", icon: <Microphone size={20} /> },
   { to: "/business", label: "Hiring", icon: <Briefcase size={20} /> },
 ];
 
@@ -90,7 +118,7 @@ export function AppShell() {
   const navigate = useNavigate();
   useEffect(() => setOpen(false), [location.pathname]);
   const name = profile?.full_name || user?.email?.split("@")[0] || "Account";
-  const items = profile?.account_type === "business" ? [navItems[2], navItems[0], navItems[1]] : navItems;
+  const items = !user ? [navItems[1]] : profile?.account_type === "business" ? [navItems[2], navItems[0], navItems[1]] : navItems;
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -99,7 +127,7 @@ export function AppShell() {
           Skip to content
         </a>
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
-          <Brand to="/app" />
+          <Brand to={user ? "/app" : "/"} />
           <nav aria-label="App" className="ml-4 hidden items-center gap-1 md:flex">
             {items.map((i) => (
               <NavLink
@@ -120,6 +148,19 @@ export function AppShell() {
           </nav>
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
+            {!user && (
+              <div className="flex items-center gap-1.5">
+                <ButtonLink to={`/login?next=${encodeURIComponent(location.pathname)}`} size="sm" variant="ghost">
+                  Sign in
+                </ButtonLink>
+                <span className="hidden sm:inline-flex">
+                  <ButtonLink to={`/signup?next=${encodeURIComponent(location.pathname)}`} size="sm" variant="primary">
+                    Save my progress
+                  </ButtonLink>
+                </span>
+              </div>
+            )}
+            {user && (
             <div className="hidden items-center gap-3 border-l border-border-soft pl-3 md:flex">
               <div className="flex size-9 items-center justify-center rounded-full bg-primary-soft text-sm font-bold text-primary" aria-hidden="true">
                 {name.slice(0, 1).toUpperCase()}
@@ -135,9 +176,12 @@ export function AppShell() {
                 <SignOut size={20} />
               </IconButton>
             </div>
+            )}
+            {user && (
             <IconButton label={open ? "Close menu" : "Open menu"} className="md:hidden" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
               {open ? <X size={22} /> : <List size={22} />}
             </IconButton>
+            )}
           </div>
         </div>
         {open && (

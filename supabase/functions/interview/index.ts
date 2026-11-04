@@ -21,9 +21,13 @@ const admin: SupabaseClient = createClient(SUPABASE_URL, SERVICE_KEY, {
 });
 
 const MAX_BODY_BYTES = 64 * 1024;
-const GUEST_SESSIONS_PER_HOUR = 15;
-const USER_SESSIONS_PER_HOUR = 30;
-const APPLICANT_SESSIONS_PER_HOUR = 6;
+// Abuse / cost protection. Applicant limits are per campaign so that many genuine applicants
+// behind one office or campus network are not blocked by each other's practice sessions.
+const RATE_MULTIPLIER = Math.max(1, Number(Deno.env.get("VOCALHIRE_RATE_LIMIT_MULTIPLIER") ?? 1) || 1);
+const GUEST_SESSIONS_PER_HOUR = 15 * RATE_MULTIPLIER;
+const USER_SESSIONS_PER_HOUR = 30 * RATE_MULTIPLIER;
+const APPLICANT_SESSIONS_PER_CAMPAIGN_PER_HOUR = 25 * RATE_MULTIPLIER;
+const ANY_SESSIONS_PER_IP_PER_HOUR = 60 * RATE_MULTIPLIER;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -141,13 +145,16 @@ async function loadAuthorized(req: Request, body: Record<string, unknown>, allow
 // ---------------------------------------------------------------------------------------------
 const hourAgo = () => new Date(Date.now() - 3600_000).toISOString();
 
-async function enforceGuestLimit(ipH: string, limit: number) {
-  const { count } = await admin
-    .from("interview_session_secrets")
-    .select("session_id", { count: "exact", head: true })
-    .eq("client_ip_hash", ipH)
-    .gte("created_at", hourAgo());
-  if ((count ?? 0) >= limit) throw new HttpError(429, "rate_limited", "Too many interviews started from this network. Please try again in an hour.");
+async function enforceIpLimit(ipH: string, scope: { campaignId: string | null }, limit: number) {
+  const since = hourAgo();
+  const scoped = admin.from("interview_session_secrets").select("session_id", { count: "exact", head: true }).eq("client_ip_hash", ipH).gte("created_at", since);
+  const [{ count: scopedCount }, { count: anyCount }] = await Promise.all([
+    scope.campaignId ? scoped.eq("campaign_id", scope.campaignId) : scoped.is("campaign_id", null),
+    admin.from("interview_session_secrets").select("session_id", { count: "exact", head: true }).eq("client_ip_hash", ipH).gte("created_at", since),
+  ]);
+  if ((scopedCount ?? 0) >= limit || (anyCount ?? 0) >= ANY_SESSIONS_PER_IP_PER_HOUR) {
+    throw new HttpError(429, "rate_limited", "Too many interviews started from this network. Please try again in an hour.");
+  }
 }
 
 async function enforceUserLimit(userId: string) {
@@ -292,7 +299,7 @@ const actions: Record<string, Handler> = {
     const config = normalizeConfig({ ...raw, roleTitle, companyName: sanitizeShortText(raw.companyName ?? "", 120) || null }, "practice");
     const ipH = await ipHash(req);
     if (user) await enforceUserLimit(user.id);
-    else await enforceGuestLimit(ipH, GUEST_SESSIONS_PER_HOUR);
+    else await enforceIpLimit(ipH, { campaignId: null }, GUEST_SESSIONS_PER_HOUR);
 
     const plan = await planSession(ai, config, "practice");
     const { data, error } = await admin
@@ -335,7 +342,7 @@ const actions: Record<string, Handler> = {
     if (name.length < 2) throw new HttpError(400, "invalid", "Please enter your full name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) throw new HttpError(400, "invalid", "Please enter a valid email address.");
     const ipH = await ipHash(req);
-    await enforceGuestLimit(ipH, APPLICANT_SESSIONS_PER_HOUR);
+    await enforceIpLimit(ipH, { campaignId: c.id }, APPLICANT_SESSIONS_PER_CAMPAIGN_PER_HOUR);
 
     const { data: prior } = await admin
       .from("interview_sessions")
@@ -369,7 +376,9 @@ const actions: Record<string, Handler> = {
       .single();
     if (error) throw error;
     const token = newToken();
-    const { error: e2 } = await admin.from("interview_session_secrets").insert({ session_id: data.id, access_token_hash: await sha256(token), client_ip_hash: ipH });
+    const { error: e2 } = await admin
+      .from("interview_session_secrets")
+      .insert({ session_id: data.id, access_token_hash: await sha256(token), client_ip_hash: ipH, campaign_id: c.id });
     if (e2) throw e2;
     return { sessionId: data.id, token };
   },

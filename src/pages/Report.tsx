@@ -112,7 +112,14 @@ export default function Report() {
                 <EngineNote engine={report.engine} />
               </div>
             </div>
-            <ScoreRing value={report.delivery.confidenceScore} label="Delivery confidence" sublabel="Pace, fillers, hedging, eye contact" size={112} />
+            {report.delivery.voiceShare > 0 ? (
+              <ScoreRing value={report.delivery.confidenceScore} label="Delivery confidence" sublabel="Pace, fillers, hedging, eye contact" size={112} />
+            ) : (
+              <div className="max-w-44 rounded-xl bg-surface-2 p-4 text-center">
+                <p className="text-sm font-bold text-fg-strong">Delivery confidence</p>
+                <p className="mt-1 text-xs text-muted-fg">Answer out loud next time to get feedback on your pace, filler words and eye contact.</p>
+              </div>
+            )}
           </Card>
 
           <div className="grid gap-6 md:grid-cols-2">

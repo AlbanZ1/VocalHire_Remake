@@ -31,7 +31,6 @@ export class IntegrityMonitor {
   private blurAt: number | null = null;
   private running = false;
   private cleanup: (() => void)[] = [];
-  private sending = false;
 
   constructor(private opts: MonitorOptions) {}
 
@@ -43,7 +42,9 @@ export class IntegrityMonitor {
     if (!this.running) return;
     this.queue.push({ type, detail, turnSeq: this.opts.turnSeq(), at: new Date().toISOString() });
     const msg = NOTICES[type];
-    if (msg) this.opts.onNotice?.({ type, message: msg });
+    // Never call into React synchronously from inside a native event dispatch: a re-render there
+    // would reset controlled inputs before React's own onChange runs (losing the user's text).
+    if (msg) setTimeout(() => this.opts.onNotice?.({ type, message: msg }), 0);
     if (this.queue.length >= 20) void this.flush();
   }
 
@@ -148,19 +149,24 @@ export class IntegrityMonitor {
     return () => el.removeEventListener("input", onInput);
   }
 
+  private inflight: Promise<void> | null = null;
+
   async flush(keepalive = false) {
-    if (this.sending && !keepalive) return;
+    // Wait for an in-flight batch so callers can rely on "flushed" meaning delivered.
+    if (this.inflight && !keepalive) await this.inflight.catch(() => undefined);
     if (!this.queue.length) return;
-    const batch = this.queue.splice(0, 50);
-    this.sending = true;
-    try {
-      await this.opts.send(batch, keepalive);
-    } catch {
-      // Put them back for the next attempt (bounded).
-      this.queue = [...batch, ...this.queue].slice(0, 200);
-    } finally {
-      this.sending = false;
-    }
+    const batch = this.queue.splice(0, 60);
+    const p = (async () => {
+      try {
+        await this.opts.send(batch, keepalive);
+      } catch {
+        // Put them back for the next attempt (bounded).
+        this.queue = [...batch, ...this.queue].slice(0, 200);
+      }
+    })();
+    this.inflight = p;
+    await p;
+    if (this.inflight === p) this.inflight = null;
   }
 
   async stop() {

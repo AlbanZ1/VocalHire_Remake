@@ -333,7 +333,8 @@ export function heuristicNarrative(input: {
         ? `A ${label.toLowerCase()} foundation — strengthening your ${STARR_LABELS[worst].toLowerCase()} will lift every answer.`
         : `A good first step — with more structure, especially around your ${STARR_LABELS[worst].toLowerCase()}, your answers will land much better.`;
 
-  const summary = `Across ${answered.length} answer${answered.length === 1 ? "" : "s"} you scored ${overall}/100 overall. Your strongest STARR element was ${STARR_LABELS[best]} (${starr[best]}/4) and the biggest opportunity is ${STARR_LABELS[worst]} (${starr[worst]}/4).${comps[0] ? ` Your strongest competency was ${comps[0].name}.` : ""}`;
+  const mainCount = turns.filter((t) => t.kind === "main" && t.analysis).length;
+  const summary = `Across ${mainCount} question${mainCount === 1 ? "" : "s"} you scored ${overall}/100 overall. Your strongest STARR element was ${STARR_LABELS[best]} (${starr[best]}/4) and the biggest opportunity is ${STARR_LABELS[worst]} (${starr[worst]}/4).${comps[0] ? ` Your strongest competency was ${comps[0].name}.` : ""}`;
 
   const hiringSummary =
     input.mode === "business"

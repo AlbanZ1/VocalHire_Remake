@@ -3,7 +3,7 @@ import { createBrowserRouter, Navigate, RouterProvider, useRouteError } from "re
 import { AuthProvider } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { ToastProvider } from "@/components/ui/Toast";
-import { AppShell, PublicLayout, RequireAuth } from "@/components/layout/Shells";
+import { AppShell, MinimalLayout, PublicLayout, RequireAuth } from "@/components/layout/Shells";
 import { PageLoader } from "@/components/ui/Spinner";
 import { ButtonLink } from "@/components/ui/Button";
 import { BASE_PATH } from "@/config";
@@ -53,9 +53,9 @@ const router = createBrowserRouter(
             { path: "/login", element: <S><AuthPage mode="login" /></S> },
             { path: "/signup", element: <S><AuthPage mode="signup" /></S> },
             { path: "/privacy", element: <S><Privacy /></S> },
-            { path: "/i/:campaignToken", element: <S><ApplyLanding /></S> },
           ],
         },
+        { element: <MinimalLayout />, children: [{ path: "/i/:campaignToken", element: <S><ApplyLanding /></S> }] },
         { path: "/interview/:sessionId", element: <S><InterviewRoom /></S> },
         {
           element: <AppShell />,
