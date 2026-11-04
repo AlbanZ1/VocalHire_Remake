@@ -46,11 +46,12 @@ Or with the CLI:
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref wujkhnnuptsijtyurnki
 ```
 
-That's it — new interviews immediately use Claude (`claude-opus-5-5`) to evaluate answers and write adaptive questions. Optional tuning secrets:
+That's it — new interviews immediately use Claude: `claude-haiku-5-5` for the fast per-answer step (evaluate + next question) and `claude-sonnet-5-5` for planning, reports, document reading and CV reviews. Optional tuning secrets:
 
 | Secret | Default | Purpose |
 |---|---|---|
-| `VOCALHIRE_MODEL` | `claude-opus-5-5` | Model for interviews and reports |
+| `VOCALHIRE_MODEL` | `claude-sonnet-5-5` | Model for plans, reports, documents and CV reviews |
+| `VOCALHIRE_TURN_MODEL` | `claude-haiku-5-5` | Model for the per-answer step |
 | `VOCALHIRE_TURN_EFFORT` | `low` | Effort per answer (keeps voice turns fast) |
 | `VOCALHIRE_REPORT_EFFORT` | `medium` | Effort for the final report |
 | `VOCALHIRE_DISABLE_FALLBACKS` | unset | Set to `1` to stop sending server-side refusal fallbacks |

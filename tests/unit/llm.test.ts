@@ -85,9 +85,10 @@ describe("Claude provider", () => {
     await ai.evaluate(input());
     const req = cap[0];
     expect(req.url).toContain("/v1/messages");
-    expect(req.body.model).toBe("claude-opus-5-5");
-    expect(req.body.fallbacks).toBe("default");
-    expect(req.headers["anthropic-beta"]).toContain("server-side-fallback-2026-07-01");
+    expect(req.body.model).toBe("claude-haiku-5-5");
+    // Haiku has no server-side refusal fallback, so none is requested for the per-answer step.
+    expect(req.body.fallbacks).toBeUndefined();
+    expect(req.headers["anthropic-beta"] ?? "").not.toContain("server-side-fallback");
     const oc = req.body.output_config as { format: { type: string }; effort: string };
     expect(oc.format.type).toBe("json_schema");
     expect(oc.effort).toBe("low");
@@ -145,12 +146,17 @@ describe("Claude provider", () => {
       ],
       opening_question: "Tell me about a technically hard problem you solved recently.",
     };
-    const ai = createClaudeAI({ apiKey: "t", fetch: mockFetch(plan, []) });
+    const cap: Captured[] = [];
+    const ai = createClaudeAI({ apiKey: "t", fetch: mockFetch(plan, cap) });
     const config = normalizeConfig({ roleTitle: "Engineer", focusCompetencies: ["Customer focus"] }, "business");
     const out = await ai.plan(config, "business");
     expect(out.plan.competencies[0].key).toBe("customer_focus");
     expect(out.plan.competencies.map((c) => c.key)).toContain("technical_depth");
     expect(out.openingQuestion).toMatch(/technically hard/);
+    // Planning (like reports and CV reviews) uses the main model, with refusal fallbacks.
+    expect(cap[0].body.model).toBe("claude-sonnet-5-5");
+    expect(cap[0].body.fallbacks).toBe("default");
+    expect(cap[0].headers["anthropic-beta"]).toContain("server-side-fallback-2026-07-01");
   });
 });
 
@@ -169,7 +175,7 @@ describe("Claude provider resilience", () => {
         { status: 200, headers: { "content-type": "application/json" } },
       );
     }) as typeof fetch;
-    const ai = createClaudeAI({ apiKey: "t", fetch: f });
+    const ai = createClaudeAI({ apiKey: "t", turnModel: "claude-sonnet-5-5", fetch: f });
     const out = await ai.evaluate(input());
     expect(out.analysis.source).toBe("claude");
     expect(cap[0].body.fallbacks).toBe("default");

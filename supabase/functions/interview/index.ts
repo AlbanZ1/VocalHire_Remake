@@ -7,7 +7,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Interview, InterviewError, planSession } from "../_shared/orchestrator.ts";
 import { heuristicAI, withFallback, type InterviewAI } from "../_shared/ai.ts";
-import { createClaudeAI, DEFAULT_MODEL } from "../_shared/llm.ts";
+import { createClaudeAI, DEFAULT_MODEL, DEFAULT_TURN_MODEL } from "../_shared/llm.ts";
 import { integrityPreset, normalizeConfig } from "../_shared/engine.ts";
 import { sanitizeShortText } from "../_shared/guardrails.ts";
 import { monitoredSignals } from "../_shared/integrity.ts";
@@ -64,6 +64,7 @@ function makeAI(): InterviewAI {
     createClaudeAI({
       apiKey: key,
       model: Deno.env.get("VOCALHIRE_MODEL") || DEFAULT_MODEL,
+      turnModel: Deno.env.get("VOCALHIRE_TURN_MODEL") || DEFAULT_TURN_MODEL,
       baseURL: Deno.env.get("VOCALHIRE_ANTHROPIC_BASE_URL") || undefined,
       useFallbacks: Deno.env.get("VOCALHIRE_DISABLE_FALLBACKS") !== "1",
       turnEffort: effortEnv("VOCALHIRE_TURN_EFFORT", "low"),
@@ -117,12 +118,25 @@ async function prepareDocuments(cvRaw: unknown, jobRaw: unknown): Promise<Prepar
   const cvText = cvStripped.text;
   const jobText = jobStripped.text;
   if (cvText && cvText.length < 80) throw new HttpError(400, "invalid", "That CV looks too short — please upload the full document or paste more of it.");
-  if (!cvText && !jobText) return { cvText, jobText, removed: [], cv: null, job: null };
-  const docs = await cached("documents", [cvText, jobText], async () => {
-    const r = await ai.analyzeDocuments({ cvText, jobText });
-    return { ...r, source: r.cv?.source ?? r.job?.source ?? "heuristic" };
+  // The CV and the posting are read separately and cached by their own text, so a document
+  // read on the setup page (or by another session) is reused instead of being read again.
+  const [cv, job] = await Promise.all([cvText ? analyzeCv(cvText) : null, jobText ? analyzeJob(jobText) : null]);
+  return { cvText, jobText, removed: [...cvStripped.removed, ...jobStripped.removed], cv, job };
+}
+
+async function analyzeCv(cvText: string): Promise<CvProfile | null> {
+  const r = await cached("documents", ["cv", cvText], async () => {
+    const out = await ai.analyzeDocuments({ cvText, jobText: "" });
+    return { cv: out.cv, source: out.cv?.source ?? "heuristic" };
   });
-  return { cvText, jobText, removed: [...cvStripped.removed, ...jobStripped.removed], cv: docs.cv, job: docs.job };
+  return r.cv;
+}
+
+async function analyzeJob(jobText: string): Promise<JobProfile | null> {
+  return (await cached("job", [jobText], async () => {
+    const r = await ai.analyzeDocuments({ cvText: "", jobText });
+    return { ...(r.job as JobProfile), source: r.job?.source ?? "heuristic" };
+  })) as JobProfile;
 }
 
 async function runReview(d: PreparedDocs): Promise<CvReview> {
@@ -319,10 +333,7 @@ async function campaignPrep(c: CampaignRow, config: InterviewConfig): Promise<{ 
   if ((job || !c.description) && plan) return { plan: { ...plan, openingQuestion: null }, job };
   if (!job && c.description) {
     const jobText = stripInjection(cleanDocumentText(c.description, MAX_JOB_CHARS)).text;
-    job = (await cached("job", [jobText], async () => {
-      const r = await ai.analyzeDocuments({ cvText: "", jobText });
-      return { ...(r.job as JobProfile), source: r.job?.source ?? "heuristic" };
-    })) as JobProfile;
+    job = await analyzeJob(jobText);
   }
   // The campaign's own title and company are authoritative over anything read from the posting.
   if (job) job = { ...job, title: c.title || job.title, company: config.companyName || job.company };
@@ -373,7 +384,11 @@ type Handler = (req: Request, body: Record<string, unknown>) => Promise<unknown>
 
 const actions: Record<string, Handler> = {
   async engine() {
-    return { engine: ai.name, model: ai.name === "claude" ? Deno.env.get("VOCALHIRE_MODEL") || DEFAULT_MODEL : null };
+    return {
+      engine: ai.name,
+      model: ai.name === "claude" ? Deno.env.get("VOCALHIRE_MODEL") || DEFAULT_MODEL : null,
+      turnModel: ai.name === "claude" ? Deno.env.get("VOCALHIRE_TURN_MODEL") || DEFAULT_TURN_MODEL : null,
+    };
   },
 
   async create_practice(req, body) {

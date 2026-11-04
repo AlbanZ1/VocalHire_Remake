@@ -34,13 +34,23 @@ import { STARR_KEYS, clamp, clampScore04, computeAnswerScore, enforceEvidence, m
 import { resolveCompetency } from "./questionBank.ts";
 import { sanitizeShortText } from "./guardrails.ts";
 
-export const DEFAULT_MODEL = "claude-opus-5-5";
+/** Plans, reports, document reading and CV reviews: the writing people read. */
+export const DEFAULT_MODEL = "claude-sonnet-5-5";
+/** The per-answer step (evaluate + next question): runs many times per interview and must be fast. */
+export const DEFAULT_TURN_MODEL = "claude-haiku-5-5";
+
+/** Server-side refusal fallbacks exist for these model families only. */
+function supportsFallbacks(model: string): boolean {
+  return !/haiku/i.test(model);
+}
 
 type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface ClaudeOptions {
   apiKey: string;
   model?: string;
+  /** Model for the per-answer step; defaults to DEFAULT_TURN_MODEL. */
+  turnModel?: string;
   baseURL?: string;
   /** Enable server-side refusal fallbacks (default true). */
   useFallbacks?: boolean;
@@ -181,7 +191,8 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
   const model = opts.model || DEFAULT_MODEL;
-  let useFallbacks = opts.useFallbacks ?? true;
+  const turnModel = opts.turnModel || DEFAULT_TURN_MODEL;
+  const fallbacksOff = new Set<string>(opts.useFallbacks === false ? [model, turnModel] : []);
 
   async function callJSON<T>(args: {
     system: string;
@@ -190,22 +201,24 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
     parse: (raw: unknown) => T;
     maxTokens: number;
     effort: Effort;
+    model?: string;
   }): Promise<T> {
+    const useModel = args.model ?? model;
     const base = {
-      model,
+      model: useModel,
       max_tokens: args.maxTokens,
       system: [{ type: "text" as const, text: args.system, cache_control: { type: "ephemeral" as const } }],
       messages: [{ role: "user" as const, content: args.user }],
       output_config: { effort: args.effort, format: { type: "json_schema" as const, schema: args.schema } },
     };
     let response;
-    if (useFallbacks) {
+    if (supportsFallbacks(useModel) && !fallbacksOff.has(useModel)) {
       try {
         response = await client.beta.messages.create({ ...base, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
       } catch (e) {
         // If this account/model rejects the refusal-fallback beta, stop sending it and retry once.
         if (!(e instanceof Anthropic.BadRequestError)) throw e;
-        useFallbacks = false;
+        fallbacksOff.add(useModel);
         response = await client.messages.create(base);
       }
     } else {
@@ -258,6 +271,7 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
         parse: (raw) => EvaluationSchema.parse(raw),
         maxTokens: 8000,
         effort: opts.turnEffort ?? "low",
+        model: turnModel,
       });
       // The deterministic pre-screen wins over the model for manipulation (model can't "un-flag" it).
       const intent = i.preIntent === "manipulation" ? "manipulation" : out.intent;
