@@ -41,7 +41,7 @@ export class MemoryStore implements InterviewStore {
     return this.events.filter((e) => e.session_id === sessionId).length;
   }
 
-  addSession(partial: { mode?: SessionMode; config?: Partial<InterviewConfig> & { roleTitle: string }; plan?: SessionRow["plan"] } = {}): SessionRow {
+  addSession(partial: { mode?: SessionMode; config?: Partial<InterviewConfig> & { roleTitle: string }; plan?: SessionRow["plan"]; cv_profile?: SessionRow["cv_profile"]; job_profile?: SessionRow["job_profile"] } = {}): SessionRow {
     const mode = partial.mode ?? "practice";
     const config = normalizeConfig(partial.config ?? { roleTitle: "Software Engineer" }, mode);
     const s: SessionRow = {
@@ -56,6 +56,8 @@ export class MemoryStore implements InterviewStore {
       config,
       plan: partial.plan ?? null,
       state: null,
+      cv_profile: partial.cv_profile ?? null,
+      job_profile: partial.job_profile ?? null,
       status: "created",
       engine: null,
       started_at: null,
@@ -91,3 +93,57 @@ export const SCRIPTED_ANSWER =
   "Action: I proactively utilized best practices and leveraged innovative, robust solutions in a holistic manner. " +
   "Result: This resulted in impactful, actionable insights and improved outcomes across the organization. " +
   "Reflection: Key learnings included the importance of being results-driven and detail-oriented.";
+
+export const SAMPLE_CV = `SARAH O'CONNOR
+Customer Success Manager | Dublin, Ireland | sarah.oconnor@example.com | +353 87 123 4567 | linkedin.com/in/sarahoc
+
+PROFESSIONAL SUMMARY
+Customer success manager with 6 years of experience in B2B SaaS, specialising in onboarding, renewals and turning at-risk accounts around.
+
+EXPERIENCE
+Customer Success Manager
+Acme Software, Dublin
+Mar 2021 – Present
+• Managed a portfolio of 45 mid-market accounts worth €2.1M ARR
+• Reduced churn by 18% in 12 months by introducing quarterly business reviews
+• Responsible for onboarding new customers
+• Led a cross-functional project with product to fix the top 5 customer pain points
+
+Support Specialist
+Brightdesk Ltd, Cork
+Jun 2018 – Feb 2021
+• Resolved 60+ tickets per day with a 96% satisfaction score
+• Trained 4 new hires on Zendesk and our escalation process
+• Helped with the migration to a new CRM
+
+EDUCATION
+BA in Business, University College Cork, 2018
+
+SKILLS
+Zendesk, Salesforce, Gainsight, SQL, Onboarding, Renewals, Stakeholder management`;
+
+export const SAMPLE_JOB = `Senior Customer Success Manager
+Northwind Analytics · Berlin, Germany (Hybrid)
+
+About the job
+Northwind Analytics is hiring a Senior Customer Success Manager to own relationships with our enterprise customers.
+
+What you'll do
+- Own a portfolio of enterprise accounts and drive renewals and expansion
+- Run quarterly business reviews with executive stakeholders
+- Partner with product and support to resolve escalations
+- Build onboarding plans that get customers to value fast
+
+What we're looking for
+- 5+ years of experience in customer success or account management in B2B SaaS
+- Experience with Gainsight or a similar customer success platform
+- Strong stakeholder management and communication skills
+- Data-driven approach: comfortable with SQL or dashboards to track health scores
+- Fluent German
+
+Nice to have
+- Experience in analytics or BI products
+- Salesforce administration
+
+Benefits
+- 30 days holiday`;

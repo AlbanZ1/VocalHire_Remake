@@ -382,15 +382,17 @@ export function bankQuestion(
   return fill(rotated[0], roleTitle);
 }
 
-export function introQuestion(persona: Persona, roleTitle: string, companyName?: string | null): string {
+export function introQuestion(persona: Persona, roleTitle: string, companyName?: string | null, firstName?: string | null, hasCv = false): string {
   const at = companyName ? ` at ${companyName}` : "";
   switch (persona) {
     case "supportive":
-      return `Thanks for joining me today — there's no rush, so take your time. To get us started, could you tell me a little about yourself and what draws you to this ${roleTitle} role${at}?`;
+      return `${firstName ? `Hi ${firstName}, thanks` : "Thanks"} for joining me today — there's no rush, so take your time. ${hasCv ? "I've had a look at your CV, and I'm looking forward to hearing more. " : ""}To get us started, could you tell me a little about yourself and what draws you to this ${roleTitle} role${at}?`;
     case "challenging":
-      return `Let's get started. In about a minute, tell me about your background and why you're the right person for this ${roleTitle} role${at}.`;
+      return hasCv
+        ? `${firstName ? `${firstName}, let's` : "Let's"} get started. I've read your CV, so skip the summary — in about a minute, tell me why you're the right person for this ${roleTitle} role${at}.`
+        : `${firstName ? `${firstName}, let's` : "Let's"} get started. In about a minute, tell me about your background and why you're the right person for this ${roleTitle} role${at}.`;
     default:
-      return `To start, please give me a brief overview of your background and why you're interested in this ${roleTitle} position${at}.`;
+      return `${firstName ? `Hello ${firstName}, thank you for joining me. ` : ""}${hasCv ? "I've read through your CV. " : ""}To start, please give me a brief overview of your background and why you're interested in this ${roleTitle} position${at}.`;
   }
 }
 
@@ -456,7 +458,15 @@ export function pick<T>(arr: T[], salt: number): T {
   return arr[Math.abs(salt) % arr.length];
 }
 
-export function acknowledgment(persona: Persona, salt: number): string {
+const NAMED_ACKS: Record<Persona, string[]> = {
+  supportive: ["Thank you, {name} — that's really helpful.", "Thanks for walking me through that, {name}."],
+  neutral: ["Thank you, {name}.", "Understood — thanks, {name}."],
+  challenging: ["Okay, {name}.", "Noted, {name}."],
+};
+
+/** Short reaction before the next question; uses the first name now and then (not every line). */
+export function acknowledgment(persona: Persona, salt: number, firstName?: string | null): string {
+  if (firstName && Math.abs(salt) % 3 === 1) return pick(NAMED_ACKS[persona] ?? NAMED_ACKS.neutral, salt).replace("{name}", firstName);
   return pick(ACKS[persona] ?? ACKS.neutral, salt);
 }
 
@@ -469,11 +479,12 @@ export function clarifyLine(question: string, persona: Persona): string {
   return `${lead} ${question} Take your time — one specific example from your own experience is perfect.`;
 }
 
-export function closingLine(persona: Persona, mode: "practice" | "business", companyName?: string | null): string {
+export function closingLine(persona: Persona, mode: "practice" | "business", companyName?: string | null, firstName?: string | null): string {
+  const name = firstName ? `, ${firstName}` : "";
   if (mode === "business") {
     const who = companyName ? `the ${companyName} team` : "the hiring team";
-    return `That's all my questions. Thank you for your time today — ${who} will review your interview and be in touch about next steps.`;
+    return `That's all my questions${name}. Thank you for your time today — ${who} will review your interview and be in touch about next steps.`;
   }
-  if (persona === "supportive") return "That's the end of our interview. Well done for practising — that takes courage. Let's look at how it went.";
-  return "That concludes the interview. Thank you — your feedback report is ready.";
+  if (persona === "supportive") return `That's the end of our interview${name}. Well done for practising — that takes courage. Let's look at how it went.`;
+  return `That concludes the interview${name}. Thank you — your feedback report is ready.`;
 }

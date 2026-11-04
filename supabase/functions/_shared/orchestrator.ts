@@ -4,7 +4,7 @@
 // Server-owned state: the client can only (a) begin, (b) answer the currently pending question,
 // (c) send integrity events, (d) end early. It cannot pick questions, skip ahead, or set scores.
 
-import type { InterviewAI } from "./ai.ts";
+import type { InterviewAI, PlanDocs } from "./ai.ts";
 import type {
   AnswerMode,
   DeliverySummary,
@@ -45,6 +45,7 @@ import {
 import { computeIntegrity, severityFor } from "./integrity.ts";
 import { acknowledgment, bankQuestion, clarifyLine, closingLine, introQuestion, transition } from "./questionBank.ts";
 import { heuristicFollowUp } from "./heuristics.ts";
+import { cvQuestion, firstName, pickCvAnchor } from "./documents.ts";
 import { STARR_KEYS, computeAnswerScore, scoreLabel } from "./rubric.ts";
 import { answerSimilarity, buildMetrics, deliveryConfidence } from "./speech.ts";
 
@@ -109,8 +110,8 @@ function hashSalt(id: string, seq: number): number {
 }
 
 /** Plan a new session (competencies + optional opening question). */
-export async function planSession(ai: InterviewAI, config: InterviewConfig, mode: SessionMode): Promise<InterviewPlan> {
-  const out = await ai.plan(config, mode);
+export async function planSession(ai: InterviewAI, config: InterviewConfig, mode: SessionMode, docs: PlanDocs = {}): Promise<InterviewPlan> {
+  const out = await ai.plan(config, mode, docs);
   const opening = validateSpokenLine(out.openingQuestion, { requireQuestion: true, max: 450 });
   return { competencies: out.plan.competencies, openingQuestion: opening };
 }
@@ -155,17 +156,24 @@ export class Interview {
     let kind: TurnKind;
     let text: string;
     let competency: string | null = null;
+    const flags: string[] = [];
     if (config.includeIntro) {
       kind = "intro";
-      text = introQuestion(config.persona, config.roleTitle, config.companyName);
+      text = introQuestion(config.persona, config.roleTitle, config.companyName, firstName(config.candidateName), !!session.cv_profile);
     } else {
       kind = "main";
       const comp = chooseNextCompetency(state, plan);
       competency = comp.key;
-      text =
-        validateSpokenLine(config.fixedFirstQuestion, { requireQuestion: true, max: 450 }) ??
-        plan.openingQuestion ??
-        bankQuestion(comp, config.style, config.roleTitle, () => false, hashSalt(session.id, 1));
+      const fixed = validateSpokenLine(config.fixedFirstQuestion, { requireQuestion: true, max: 450 });
+      // With a CV, open on the candidate's real experience.
+      const anchor = fixed ? null : pickCvAnchor(session.cv_profile, [], comp);
+      const anchored = anchor ? validateSpokenLine(cvQuestion(anchor, comp, hashSalt(session.id, 1)), { requireQuestion: true, max: 450 }) : null;
+      if (anchor && anchored) {
+        state.cvQuestionsAsked = 1;
+        state.cvClaimsUsed = [anchor.text];
+        flags.push("cv_anchor");
+      }
+      text = fixed ?? anchored ?? plan.openingQuestion ?? bankQuestion(comp, config.style, config.roleTitle, () => false, hashSalt(session.id, 1));
       state.phase = "core";
       state.mainCount = 1;
       state.currentMainSeq = 1;
@@ -186,7 +194,7 @@ export class Interview {
       metrics: null,
       analysis: null,
       score: null,
-      flags: [],
+      flags,
     });
     rememberQuestion(state, text);
     state.pending = { seq: turn.seq, kind, competency, text };
@@ -229,6 +237,13 @@ export class Interview {
     const salt = hashSalt(session.id, pending.seq);
     const currentComp = plan.competencies.find((c) => c.key === pending.competency) ?? null;
     const nextComp = chooseNextCompetency(state, plan, state.currentCompetency);
+    // CV-anchored questions: roughly every other main question (up to a third of the maximum),
+    // each on a different CV item chosen deterministically for the target competency.
+    const cv = session.cv_profile ?? null;
+    const job = session.job_profile ?? null;
+    const usedClaims = state.cvClaimsUsed ?? [];
+    const cvTarget = Math.max(1, Math.round(config.maxMainQuestions / 3));
+    const cvAnchor = cv && (state.cvQuestionsAsked ?? 0) < cvTarget && state.mainCount % 2 === 0 ? pickCvAnchor(cv, usedClaims, nextComp) : null;
     const history = turns
       .filter((t) => t.answer && t.seq < pending.seq)
       .map((t) => ({ kind: t.kind, competency: t.competency, question: t.question, answer: t.answer! }));
@@ -249,6 +264,10 @@ export class Interview {
       askedQuestions: asked,
       alreadyAsked: (q) => isRepeatQuestion(q, state.askedQuestions) || isRepeat(state, q),
       salt,
+      candidateName: config.candidateName ?? null,
+      cv,
+      job,
+      cvAnchor,
     });
     const analysis = evalOut.analysis;
     const flags = [...(turn.flags ?? [])];
@@ -337,7 +356,7 @@ export class Interview {
     });
     const allTurns = turns.map((t) => (t.id === turn.id ? answeredTurn : t));
 
-    const ack = validateSpokenLine(evalOut.acknowledgment, { max: 200 }) ?? acknowledgment(config.persona, salt);
+    const ack = validateSpokenLine(evalOut.acknowledgment, { max: 200 }) ?? acknowledgment(config.persona, salt, firstName(config.candidateName));
     const liveFeedback =
       session.mode === "practice" && config.showLiveFeedback && pending.kind !== "intro" && analysis.intent === "answer"
         ? validateSpokenLine(evalOut.liveFeedback, { max: 320 })
@@ -399,7 +418,16 @@ export class Interview {
     // ---- Next main question (adaptive: written by the model in context of earlier answers).
     let q = validateSpokenLine(evalOut.nextQuestion, { requireQuestion: true, max: 450 });
     if (!q || isRepeatQuestion(q, state.askedQuestions)) {
-      q = bankQuestion(nextComp, config.style, config.roleTitle, (x) => isRepeatQuestion(x, state.askedQuestions), salt);
+      const anchoredFallback = cvAnchor ? validateSpokenLine(cvQuestion(cvAnchor, nextComp, salt), { requireQuestion: true, max: 450 }) : null;
+      q = anchoredFallback && !isRepeatQuestion(anchoredFallback, state.askedQuestions)
+        ? anchoredFallback
+        : bankQuestion(nextComp, config.style, config.roleTitle, (x) => isRepeatQuestion(x, state.askedQuestions), salt);
+    }
+    const nextFlags: string[] = [];
+    if (cvAnchor) {
+      state.cvQuestionsAsked = (state.cvQuestionsAsked ?? 0) + 1;
+      state.cvClaimsUsed = [...usedClaims, cvAnchor.text].slice(-20);
+      nextFlags.push("cv_anchor");
     }
     const preface = pending.kind === "intro" ? `${ack} Let's begin.` : `${ack} ${transition(config.persona, salt)}`;
     state.mainCount += 1;
@@ -423,7 +451,7 @@ export class Interview {
       metrics: null,
       analysis: null,
       score: null,
-      flags: [],
+      flags: nextFlags,
     });
     rememberQuestion(state, q);
     state.pending = { seq: nTurn.seq, kind: "main", competency: nextComp.key, text: q, preface };
@@ -437,7 +465,7 @@ export class Interview {
 
   /** Candidate ends early (or time ran out on the client). */
   async end(session: SessionRow, reason = "ended_by_candidate"): Promise<SubmitResult> {
-    if (session.status === "completed") return { type: "done", closing: closingLine(session.config.persona, session.mode, session.config.companyName) };
+    if (session.status === "completed") return { type: "done", closing: closingLine(session.config.persona, session.mode, session.config.companyName, firstName(session.config.candidateName)) };
     if (session.status !== "in_progress" && session.status !== "created") throw new InterviewError("finished", "This interview is not in progress.");
     const state = session.state ?? initialState(session.config, session.plan ?? { competencies: [] });
     state.pending = null;
@@ -448,7 +476,7 @@ export class Interview {
 
   private async finishAndClose(session: SessionRow, state: EngineState, reason: string): Promise<SubmitResult> {
     await this.finalize({ ...session, state }, reason);
-    return { type: "done", closing: closingLine(session.config.persona, session.mode, session.config.companyName) };
+    return { type: "done", closing: closingLine(session.config.persona, session.mode, session.config.companyName, firstName(session.config.candidateName)) };
   }
 
   /** Compute scores, integrity and the narrative report; mark the session completed. */

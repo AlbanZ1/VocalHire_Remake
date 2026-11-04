@@ -29,6 +29,7 @@ import type {
 } from "./types.ts";
 import { STARR_KEYS, clamp, mergeStarr, scoreFromStarrMap } from "./rubric.ts";
 import { questionFingerprint } from "./guardrails.ts";
+import { MAX_JOB_CHARS, cleanDocumentText, sanitizePersonName } from "./documents.ts";
 
 export const DEFAULT_DECISION_BAND = { low: 50, high: 72 };
 export const DEFAULT_EVIDENCE_TARGET = 0.7;
@@ -69,7 +70,8 @@ export function normalizeConfig(input: Partial<InterviewConfig> & { roleTitle: s
     evidenceTarget: clamp(Number(input.evidenceTarget ?? DEFAULT_EVIDENCE_TARGET), 0.3, 1),
     includeIntro: input.includeIntro ?? true,
     showLiveFeedback: mode === "practice" ? input.showLiveFeedback ?? true : false,
-    jobDescription: input.jobDescription ? String(input.jobDescription).slice(0, 6000) : null,
+    jobDescription: input.jobDescription ? cleanDocumentText(input.jobDescription, MAX_JOB_CHARS) || null : null,
+    candidateName: sanitizePersonName(input.candidateName),
     resumeSummary: input.resumeSummary ? String(input.resumeSummary).slice(0, 3000) : null,
     companyName: input.companyName ? String(input.companyName).slice(0, 120) : null,
     focusCompetencies: Array.isArray(input.focusCompetencies) ? input.focusCompetencies.slice(0, 8).map((s) => String(s).slice(0, 60)) : [],
@@ -97,6 +99,8 @@ export function initialState(config: InterviewConfig, plan: InterviewPlan): Engi
     pending: null,
     endReason: null,
     decisions: [],
+    cvQuestionsAsked: 0,
+    cvClaimsUsed: [],
   };
 }
 

@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "VocalHire \u2014 AI voice interviewer for practice and hiring, with STARR scoring and integrity monitoring.",
+  "description": "VocalHire — AI voice interviewer for practice and hiring, with STARR scoring and integrity monitoring.",
   "scripts": {
     "postinstall": "node scripts/copy-vision-assets.mjs",
     "predev": "node scripts/copy-vision-assets.mjs",
@@ -26,7 +26,9 @@
     "@phosphor-icons/react": "^2.1.10",
     "@supabase/supabase-js": "^2.118.0",
     "clsx": "^2.1.1",
+    "fflate": "^0.8.3",
     "motion": "^14.9.0",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router": "^8.5.1",

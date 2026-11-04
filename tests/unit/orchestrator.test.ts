@@ -186,3 +186,63 @@ describe("recovery", () => {
     expect(after.report?.endReason).toBe("confident");
   });
 });
+
+describe("CV-aware interviews", () => {
+  async function cvSetup(config: Record<string, unknown> = {}) {
+    const { extractCvProfile, extractJobProfile } = await import("../../supabase/functions/_shared/documents.ts");
+    const { SAMPLE_CV, SAMPLE_JOB } = await import("./helpers.ts");
+    let now = Date.parse("2026-11-04T09:00:00Z");
+    const store = new MemoryStore(() => now);
+    const cv = extractCvProfile(SAMPLE_CV, 2026);
+    const job = extractJobProfile(SAMPLE_JOB);
+    const cfg = normalizeConfig({ roleTitle: "Customer Success Manager", candidateName: "Sarah O'Connor", jobDescription: SAMPLE_JOB, minMainQuestions: 4, maxMainQuestions: 6, maxFollowUps: 0, ...config }, "practice");
+    const plan = await planSession(heuristicAI, cfg, "practice", { cv, job });
+    const s = store.addSession({ mode: "practice", config: cfg, plan, cv_profile: cv, job_profile: job });
+    return { store, iv: new Interview(store, heuristicAI, { now: () => now }), id: s.id, cv, plan, advance: (ms: number) => (now += ms) };
+  }
+
+  it("plans competencies from the job posting", async () => {
+    const { plan } = await cvSetup();
+    expect(plan.competencies.map((c) => c.key)).toEqual(expect.arrayContaining(["customer_focus", "stakeholder_management"]));
+  });
+
+  it("greets the candidate by first name and mentions the CV", async () => {
+    const { iv, id } = await cvSetup();
+    const b = await iv.begin(await iv.load(id));
+    if (!("question" in b)) throw new Error();
+    expect(b.question.text).toMatch(/^Hi Sarah,/);
+    expect(b.question.text).toMatch(/your CV/);
+  });
+
+  it("anchors questions on different CV items and ends with the candidate's name", async () => {
+    const { store, iv, id, cv } = await cvSetup();
+    const b = await iv.begin(await iv.load(id));
+    if (!("question" in b)) throw new Error();
+    let res = await iv.submitAnswer(await iv.load(id), { seq: b.question.seq, answer: "I've spent six years in customer success, most recently managing mid-market SaaS accounts in Dublin.", mode: "voice" });
+    let n = 0;
+    while (res.type !== "done" && n++ < 15) {
+      if (res.type !== "question" && res.type !== "clarify" && res.type !== "redirect") break;
+      res = await iv.submitAnswer(await iv.load(id), { seq: res.question.seq, answer: STRONG_ANSWER.replace("fintech startup", `startup number ${n}`) + ` Example ${n}.`, mode: "voice" });
+    }
+    expect(res.type).toBe("done");
+    if (res.type === "done") expect(res.closing).toMatch(/, Sarah\./);
+    const turns = await store.listTurns(id);
+    const anchored = turns.filter((t) => t.flags.includes("cv_anchor"));
+    expect(anchored.length).toBeGreaterThanOrEqual(2);
+    // The first main question after the intro is about the CV.
+    expect(turns.find((t) => t.kind === "main")!.flags).toContain("cv_anchor");
+    for (const t of anchored) expect(t.question).toMatch(/CV|worked as|your time as/);
+    const s = (await store.getSession(id))!;
+    const used = s.state!.cvClaimsUsed!;
+    expect(new Set(used).size).toBe(used.length);
+    expect(used.every((u) => cv.claims.includes(u) || cv.roles.some((r) => u.startsWith(r.title)))).toBe(true);
+  });
+
+  it("opens directly on a CV item when there is no warm-up", async () => {
+    const { iv, id, store } = await cvSetup({ includeIntro: false });
+    const b = await iv.begin(await iv.load(id));
+    if (!("question" in b)) throw new Error();
+    expect(b.question.text).toMatch(/CV/);
+    expect((await store.listTurns(id))[0].flags).toContain("cv_anchor");
+  });
+});

@@ -4,7 +4,7 @@ import type { InterviewStore } from "../_shared/orchestrator.ts";
 import type { IntegrityEventRow, SessionRow, TurnRow } from "../_shared/types.ts";
 
 const SESSION_COLUMNS =
-  "id, mode, user_id, org_id, campaign_id, candidate_name, candidate_email, role_title, config, plan, state, status, engine, started_at, completed_at, overall_score, integrity_score, integrity_level, recommendation, starr_scores, competency_scores, report, created_at";
+  "id, mode, user_id, org_id, campaign_id, candidate_name, candidate_email, role_title, config, plan, state, cv_profile, job_profile, status, engine, started_at, completed_at, overall_score, integrity_score, integrity_level, recommendation, starr_scores, competency_scores, report, created_at";
 
 const TURN_COLUMNS =
   "id, session_id, seq, kind, parent_seq, competency, question, preface, asked_at, answer, answer_mode, answered_at, metrics, analysis, score, flags";

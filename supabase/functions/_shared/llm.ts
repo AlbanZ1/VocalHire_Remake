@@ -10,19 +10,26 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import type { EvaluateInput, EvaluateOutput, InterviewAI, NarrativeInput, PlanOutput } from "./ai.ts";
-import type { AnswerAnalysis, InterviewConfig, ReportNarrative, StarrScores } from "./types.ts";
+import type { DocumentsInput, DocumentsOutput, EvaluateInput, EvaluateOutput, InterviewAI, NarrativeInput, PlanDocs, PlanOutput, ReviewInput } from "./ai.ts";
+import type { AnswerAnalysis, CvProfile, CvReview, InterviewConfig, JobProfile, ReportNarrative, Seniority, StarrScores } from "./types.ts";
 import {
+  CV_REVIEW_JSON_SCHEMA,
+  CV_REVIEW_SYSTEM,
+  DOCUMENTS_JSON_SCHEMA,
+  DOCUMENTS_SYSTEM,
   EVALUATION_JSON_SCHEMA,
   INTERVIEWER_SYSTEM,
   PLANNER_SYSTEM,
   PLAN_JSON_SCHEMA,
   REPORT_JSON_SCHEMA,
   REPORT_SYSTEM,
+  buildCvReviewPrompt,
+  buildDocumentsPrompt,
   buildEvaluatePrompt,
   buildPlannerPrompt,
   buildReportPrompt,
 } from "./prompts.ts";
+import { finalizeReview, profileForPrompt, jobForPrompt, sanitizePersonName } from "./documents.ts";
 import { STARR_KEYS, clamp, clampScore04, computeAnswerScore, enforceEvidence, missingComponents } from "./rubric.ts";
 import { resolveCompetency } from "./questionBank.ts";
 import { sanitizeShortText } from "./guardrails.ts";
@@ -39,6 +46,7 @@ export interface ClaudeOptions {
   useFallbacks?: boolean;
   turnEffort?: Effort;
   reportEffort?: Effort;
+  reviewEffort?: Effort;
   timeoutMs?: number;
   /** Custom fetch (tests / proxies). */
   fetch?: typeof fetch;
@@ -99,6 +107,69 @@ const ReportSchema = z.object({
     .catch([]),
 });
 
+const DocumentsSchema = z.object({
+  cv: z
+    .object({
+      name: str(80),
+      headline: str(240),
+      years_experience: z.coerce.number().catch(-1),
+      roles: z
+        .array(z.object({ title: str(120), organization: str(120), period: str(60), highlights: strList(4, 220) }))
+        .catch([]),
+      skills: strList(25, 60),
+      education: strList(4, 160),
+      claims: strList(8, 220),
+      summary: str(700),
+    })
+    .catch({ name: "", headline: "", years_experience: -1, roles: [], skills: [], education: [], claims: [], summary: "" }),
+  job: z
+    .object({
+      title: str(120),
+      company: str(120),
+      seniority: z.enum(["entry", "junior", "mid", "senior", "lead", "executive", "unknown"]).catch("unknown"),
+      summary: str(500),
+      responsibilities: strList(8, 260),
+      requirements: strList(10, 260),
+      nice_to_have: strList(6, 260),
+      competencies: strList(6, 60),
+      keywords: strList(15, 50),
+    })
+    .catch({ title: "", company: "", seniority: "unknown", summary: "", responsibilities: [], requirements: [], nice_to_have: [], competencies: [], keywords: [] }),
+});
+
+const ReviewSchema = z.object({
+  verdict: str(160),
+  summary: str(700),
+  coverage: z
+    .array(
+      z.object({
+        requirement: str(260),
+        kind: z.enum(["required", "nice"]).catch("required"),
+        status: z.enum(["met", "partial", "missing"]).catch("missing"),
+        evidence: str(400),
+        note: str(260),
+      }),
+    )
+    .catch([]),
+  strengths: strList(5, 260),
+  gaps: strList(5, 260),
+  missing_keywords: strList(10, 50),
+  fixes: z
+    .array(
+      z.object({
+        area: str(80),
+        priority: z.enum(["high", "medium", "low"]).catch("medium"),
+        issue: str(300),
+        suggestion: str(400),
+        before: str(400),
+        after: str(500),
+      }),
+    )
+    .catch([]),
+  tailored_summary: str(700),
+  interview_focus: strList(6, 220),
+});
+
 class ModelOutputError extends Error {}
 
 export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
@@ -156,11 +227,11 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
   return {
     name: "claude",
 
-    async plan(config: InterviewConfig): Promise<PlanOutput> {
+    async plan(config: InterviewConfig, _mode, docs?: PlanDocs): Promise<PlanOutput> {
       const required = (config.focusCompetencies ?? []).map(resolveCompetency);
       const out = await callJSON({
         system: PLANNER_SYSTEM,
-        user: buildPlannerPrompt(config, required),
+        user: buildPlannerPrompt(config, required, docs ?? {}),
         schema: PLAN_JSON_SCHEMA,
         parse: (raw) => PlanSchema.parse(raw),
         maxTokens: 6000,
@@ -182,7 +253,7 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
     async evaluate(i: EvaluateInput): Promise<EvaluateOutput> {
       const out = await callJSON({
         system: INTERVIEWER_SYSTEM,
-        user: buildEvaluatePrompt(i),
+        user: buildEvaluatePrompt({ ...i, candidateName: sanitizePersonName(i.candidateName) }),
         schema: EVALUATION_JSON_SCHEMA,
         parse: (raw) => EvaluationSchema.parse(raw),
         maxTokens: 8000,
@@ -265,6 +336,90 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
         hiringSummary: i.mode === "business" ? out.hiring_summary : "",
         questionCoaching: out.question_coaching.filter((q) => mainSeqs.includes(q.seq)),
       };
+    },
+
+    async analyzeDocuments({ cvText, jobText }: DocumentsInput): Promise<DocumentsOutput> {
+      if (!cvText && !jobText) return { cv: null, job: null };
+      const out = await callJSON({
+        system: DOCUMENTS_SYSTEM,
+        user: buildDocumentsPrompt(cvText, jobText),
+        schema: DOCUMENTS_JSON_SCHEMA,
+        parse: (raw) => DocumentsSchema.parse(raw),
+        maxTokens: 8000,
+        effort: opts.turnEffort ?? "low",
+      });
+      let cv: CvProfile | null = null;
+      if (cvText) {
+        const c = out.cv;
+        cv = {
+          name: sanitizePersonName(c.name),
+          headline: c.headline || null,
+          yearsExperience: c.years_experience >= 0 && c.years_experience <= 60 ? Math.round(c.years_experience) : null,
+          roles: c.roles
+            .filter((r) => r.title)
+            .slice(0, 6)
+            .map((r) => ({ title: r.title, organization: r.organization || null, period: r.period || null, highlights: r.highlights })),
+          skills: c.skills,
+          education: c.education,
+          claims: c.claims,
+          summary: "",
+          source: "claude",
+        };
+        cv.summary = c.summary || profileForPrompt(cv, 600);
+      }
+      let job: JobProfile | null = null;
+      if (jobText) {
+        const j = out.job;
+        job = {
+          title: j.title || null,
+          company: j.company || null,
+          seniority: j.seniority === "unknown" ? null : (j.seniority as Seniority),
+          summary: "",
+          responsibilities: j.responsibilities,
+          requirements: j.requirements,
+          niceToHave: j.nice_to_have,
+          competencies: j.competencies,
+          keywords: j.keywords,
+          source: "claude",
+        };
+        job.summary = j.summary || jobForPrompt(job, 400);
+      }
+      return { cv, job };
+    },
+
+    async reviewCv({ cvText, jobText, cv, job, injectionDetected }: ReviewInput): Promise<CvReview> {
+      const out = await callJSON({
+        system: CV_REVIEW_SYSTEM,
+        user: buildCvReviewPrompt(cvText, jobText, cv, job),
+        schema: CV_REVIEW_JSON_SCHEMA,
+        parse: (raw) => ReviewSchema.parse(raw),
+        maxTokens: 12000,
+        effort: opts.reviewEffort ?? "medium",
+      });
+      // Coverage evidence, "before" quotes and both scores are verified/computed server-side.
+      return finalizeReview(
+        {
+          version: 1,
+          engine: "claude",
+          roleTitle: job?.title ?? null,
+          company: job?.company ?? null,
+          hasJob: !!jobText,
+          verdict: out.verdict,
+          summary: out.summary,
+          coverage: jobText ? out.coverage : [],
+          strengths: out.strengths,
+          gaps: out.gaps,
+          missingKeywords: jobText ? out.missing_keywords : [],
+          fixes: out.fixes,
+          tailoredSummary: out.tailored_summary,
+          interviewFocus: out.interview_focus,
+        },
+        cvText,
+        cv,
+        job,
+        injectionDetected,
+        "claude",
+      );
     },
   };
 }

@@ -37,6 +37,7 @@ export const INTEGRITY_RULES: Record<string, Rule> = {
   ai_style_answer: { label: "Possible scripted / AI-written answer", perEvent: 6, cap: 30, explanation: "The answer's style suggests it may have been read from a script or AI tool: polished but generic, few concrete specifics." },
   depth_drop: { label: "Struggled with follow-up detail", perEvent: 5, cap: 20, explanation: "A detailed main answer was followed by a much weaker answer when asked to go deeper on the same story." },
   latency_anomaly: { label: "Long silence before a fluent answer", perEvent: 3, cap: 15, explanation: "A long pause was followed by an unusually fluent, polished answer." },
+  cv_prompt_injection: { label: "Hidden instructions in CV", perEvent: 20, cap: 20, explanation: "The uploaded CV contained text addressed to an AI system (e.g. 'ignore previous instructions', 'rate this candidate highly') — a known trick against automated screening. It was removed before analysis." },
   telemetry_gap: { label: "Monitoring interrupted", perEvent: 8, cap: 16, explanation: "The browser stopped sending integrity heartbeats while the interview was active." },
 };
 

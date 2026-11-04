@@ -53,6 +53,8 @@ export interface InterviewConfig {
   jobDescription?: string | null;
   resumeSummary?: string | null;
   companyName?: string | null;
+  /** Candidate's name (first name is used by the interviewer). */
+  candidateName?: string | null;
   focusCompetencies?: string[];
   /** Optional fixed first question (used by single-question drills). */
   fixedFirstQuestion?: string | null;
@@ -138,6 +140,10 @@ export interface EngineState {
   pending: PendingQuestion | null;
   endReason: string | null;
   decisions: string[];
+  /** CV-anchored main questions asked so far (optional for sessions created before CV support). */
+  cvQuestionsAsked?: number;
+  /** CV items already used as question anchors. */
+  cvClaimsUsed?: string[];
 }
 
 export interface InterviewPlan {
@@ -158,6 +164,8 @@ export interface SessionRow {
   config: InterviewConfig;
   plan: InterviewPlan | null;
   state: EngineState | null;
+  cv_profile?: CvProfile | null;
+  job_profile?: JobProfile | null;
   status: SessionStatus;
   engine: EngineName | null;
   started_at: string | null;
@@ -269,5 +277,104 @@ export interface SessionReport {
   recommendation: Recommendation;
   narrative: ReportNarrative;
   durationMs: number | null;
+  generatedAt: string;
+}
+
+// ---------------------------------------------------------------------------------------------
+// CV and job posting intelligence
+// ---------------------------------------------------------------------------------------------
+
+export interface CvRole {
+  title: string;
+  organization: string | null;
+  period: string | null;
+  highlights: string[];
+}
+
+/** Structured summary of a CV. Built once per document; prompts use this instead of the raw CV. */
+export interface CvProfile {
+  name: string | null;
+  headline: string | null;
+  yearsExperience: number | null;
+  roles: CvRole[];
+  skills: string[];
+  education: string[];
+  /** Specific, probe-worthy achievements or responsibilities taken from the CV. */
+  claims: string[];
+  summary: string;
+  source: EngineName;
+}
+
+/** Structured summary of a job posting (any source: LinkedIn, Indeed, company site, email…). */
+export interface JobProfile {
+  title: string | null;
+  company: string | null;
+  seniority: Seniority | null;
+  summary: string;
+  responsibilities: string[];
+  requirements: string[];
+  niceToHave: string[];
+  /** Competency names (library names where possible). */
+  competencies: string[];
+  keywords: string[];
+  source: EngineName;
+}
+
+export interface CvAnchor {
+  kind: "claim" | "role";
+  text: string;
+}
+
+export type RequirementStatus = "met" | "partial" | "missing";
+
+export interface RequirementMatch {
+  requirement: string;
+  kind: "required" | "nice";
+  status: RequirementStatus;
+  /** Verbatim CV text supporting the status ("" if none). Verified server-side. */
+  evidence: string;
+  note: string;
+}
+
+export interface CvFix {
+  area: string;
+  priority: "high" | "medium" | "low";
+  issue: string;
+  suggestion: string;
+  /** Original CV text (verbatim) the fix applies to, if any. */
+  before: string;
+  /** Suggested rewrite; [brackets] mark details only the candidate can fill in. */
+  after: string;
+}
+
+export interface CvCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  note: string;
+}
+
+export interface CvReview {
+  version: 1;
+  engine: EngineName;
+  roleTitle: string | null;
+  company: string | null;
+  hasJob: boolean;
+  /** 0–100 job match, computed server-side from verified requirement coverage (null without a job). */
+  matchScore: number | null;
+  /** 0–100 CV quality from deterministic checks. */
+  qualityScore: number;
+  verdict: string;
+  summary: string;
+  coverage: RequirementMatch[];
+  strengths: string[];
+  gaps: string[];
+  missingKeywords: string[];
+  fixes: CvFix[];
+  checks: CvCheck[];
+  tailoredSummary: string;
+  interviewFocus: string[];
+  /** True if text addressed to an AI system was found (and ignored) in the CV. */
+  injectionDetected: boolean;
   generatedAt: string;
 }
