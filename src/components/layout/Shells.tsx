@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
-import { Briefcase, ChartLineUp, List, Microphone, SignOut, X } from "@phosphor-icons/react";
+import { Briefcase, ChartLineUp, FileMagnifyingGlass, List, Microphone, SignOut, X } from "@phosphor-icons/react";
 import { clsx } from "clsx";
 import { Brand } from "./Brand";
 import { ThemeToggle } from "./ThemeToggle";
@@ -20,6 +20,7 @@ export function PublicHeader() {
         <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
           <a href="/#how" className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-fg transition-colors hover:text-fg-strong">How it works</a>
           <a href="/#starr" className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-fg transition-colors hover:text-fg-strong">STARR scoring</a>
+          <Link to="/cv-review" className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-fg transition-colors hover:text-fg-strong">CV review</Link>
           <a href="/#business" className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-fg transition-colors hover:text-fg-strong">For hiring teams</a>
           <a href="/#integrity" className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-fg transition-colors hover:text-fg-strong">Integrity</a>
         </nav>
@@ -57,6 +58,7 @@ export function PublicFooter() {
         </div>
         <nav aria-label="Footer" className="grid grid-cols-2 gap-x-10 gap-y-2 text-sm">
           <Link to="/practice/new" className="text-muted-fg hover:text-fg-strong">Practise now</Link>
+          <Link to="/cv-review" className="text-muted-fg hover:text-fg-strong">CV review</Link>
           <Link to="/signup?type=business" className="text-muted-fg hover:text-fg-strong">Hire with VocalHire</Link>
           <Link to="/privacy" className="text-muted-fg hover:text-fg-strong">Privacy & monitoring</Link>
           <Link to="/login" className="text-muted-fg hover:text-fg-strong">Sign in</Link>
@@ -108,6 +110,7 @@ export function MinimalLayout() {
 const navItems = [
   { to: "/app", label: "Practice", icon: <ChartLineUp size={20} />, end: true },
   { to: "/practice/new", label: "New practice", icon: <Microphone size={20} /> },
+  { to: "/cv-review", label: "CV review", icon: <FileMagnifyingGlass size={20} /> },
   { to: "/business", label: "Hiring", icon: <Briefcase size={20} /> },
 ];
 

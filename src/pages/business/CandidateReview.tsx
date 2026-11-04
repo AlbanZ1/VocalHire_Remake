@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Envelope, FloppyDisk, Info, Warning } from "@phosphor-icons/react";
+import { ArrowLeft, CaretDown, Envelope, FileText, FloppyDisk, Info, Warning } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { END_REASON_LABELS, RECOMMENDATION_LABELS, REVIEW_STATUS_LABELS, formatDateTime, formatDuration } from "@/lib/format";
-import type { ReportTurn } from "@/lib/api";
+import type { CvProfile, CvReview, ReportTurn } from "@/lib/api";
+import { CvProfileCard, CvReviewView } from "@/components/documents/CvParts";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Alert, Badge } from "@/components/ui/Badge";
@@ -30,6 +31,39 @@ interface SessionDetail {
   reviewer_notes: string | null;
   reviewed_at: string | null;
   consent_at: string | null;
+  candidate_cv: string | null;
+  cv_profile: CvProfile | null;
+  cv_review: CvReview | null;
+}
+
+function CvSection({ s }: { s: SessionDetail }) {
+  const [showCv, setShowCv] = useState(false);
+  if (!s.cv_profile && !s.candidate_cv) return null;
+  return (
+    <section aria-labelledby="cv-fit" className="space-y-4">
+      <h2 id="cv-fit" className="text-lg font-extrabold">
+        CV vs the job
+      </h2>
+      {s.cv_review ? (
+        <CvReviewView review={s.cv_review} audience="employer" compact />
+      ) : (
+        <Alert tone="info" icon={<Info size={20} />}>
+          The CV fit summary is still being prepared. Refresh in a moment.
+        </Alert>
+      )}
+      {s.candidate_cv && (
+        <Card className="p-5">
+          <button type="button" onClick={() => setShowCv((v) => !v)} className="flex w-full items-center justify-between gap-3 text-left" aria-expanded={showCv}>
+            <span className="flex items-center gap-2 font-bold text-fg-strong">
+              <FileText size={20} className="text-primary" aria-hidden="true" /> Full CV text
+            </span>
+            <CaretDown size={18} className={showCv ? "rotate-180 transition-transform" : "transition-transform"} />
+          </button>
+          {showCv && <pre className="mt-4 max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-4 font-sans text-sm leading-relaxed text-fg">{s.candidate_cv}</pre>}
+        </Card>
+      )}
+    </section>
+  );
 }
 
 export default function CandidateReview() {
@@ -48,7 +82,7 @@ export default function CandidateReview() {
     Promise.all([
       supabase
         .from("interview_sessions")
-        .select("id, campaign_id, candidate_name, candidate_email, role_title, status, started_at, completed_at, report, plan, review_status, reviewer_notes, reviewed_at, consent_at")
+        .select("id, campaign_id, candidate_name, candidate_email, role_title, status, started_at, completed_at, report, plan, review_status, reviewer_notes, reviewed_at, consent_at, candidate_cv, cv_profile, cv_review")
         .eq("id", sessionId)
         .single(),
       supabase.from("interview_turns").select("seq, kind, parent_seq, competency, question, preface, answer, answer_mode, metrics, analysis, score, flags").eq("session_id", sessionId).order("seq"),
@@ -124,9 +158,12 @@ export default function CandidateReview() {
       </div>
 
       {!r ? (
-        <Alert tone="info" icon={<Info size={20} />} title="Interview in progress">
-          Results will appear here when the candidate finishes.
-        </Alert>
+        <>
+          <Alert tone="info" icon={<Info size={20} />} title="Interview in progress">
+            Results will appear here when the candidate finishes.
+          </Alert>
+          <CvSection s={s} />
+        </>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
@@ -177,6 +214,7 @@ export default function CandidateReview() {
                 </ul>
               </Card>
             </div>
+            <CvSection s={s} />
             <Card>
               <CardHeader title="Delivery" />
               <div className="p-5">
@@ -215,6 +253,7 @@ export default function CandidateReview() {
                 {s.reviewed_at && <p className="text-xs text-muted-fg">Last saved {formatDateTime(s.reviewed_at)}</p>}
               </div>
             </Card>
+            {s.cv_profile && <CvProfileCard cv={s.cv_profile} title="From the CV" className="bg-surface" />}
             <IntegrityPanel integrity={r.integrity} events={events} />
             {s.consent_at && <p className="text-xs text-muted-fg">Candidate consented to the monitoring terms on {formatDateTime(s.consent_at)}.</p>}
           </div>

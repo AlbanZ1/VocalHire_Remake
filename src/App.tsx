@@ -12,6 +12,7 @@ const Landing = lazy(() => import("@/pages/Landing"));
 const AuthPage = lazy(() => import("@/pages/Auth"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const PracticeSetup = lazy(() => import("@/pages/PracticeSetup"));
+const CvReview = lazy(() => import("@/pages/CvReview"));
 const InterviewRoom = lazy(() => import("@/pages/InterviewRoom"));
 const Report = lazy(() => import("@/pages/Report"));
 const Privacy = lazy(() => import("@/pages/Privacy"));
@@ -61,6 +62,8 @@ const router = createBrowserRouter(
           element: <AppShell />,
           children: [
             { path: "/practice/new", element: <S><PracticeSetup /></S> },
+            { path: "/cv-review", element: <S><CvReview /></S> },
+            { path: "/cv-review/:reviewId", element: <S><CvReview /></S> },
             { path: "/report/:sessionId", element: <S><Report /></S> },
             { path: "/app", element: <RequireAuth><S><Dashboard /></S></RequireAuth> },
             { path: "/business", element: <RequireAuth><S><BusinessHome /></S></RequireAuth> },

@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { Alert } from "@/components/ui/Badge";
 import { Checkbox, Field, Input } from "@/components/ui/Field";
 import { PageLoader } from "@/components/ui/Spinner";
+import { DocumentInput } from "@/components/documents/DocumentInput";
 
 export default function ApplyLanding() {
   const { campaignToken = "" } = useParams();
@@ -17,6 +18,7 @@ export default function ApplyLanding() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [consent, setConsent] = useState(false);
+  const [cvText, setCvText] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,13 +35,14 @@ export default function ApplyLanding() {
     const errs: Record<string, string> = {};
     if (name.trim().length < 2) errs.name = "Enter your full name.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) errs.email = "Enter a valid email address.";
+    if (info?.cvRequirement === "required" && cvText.trim().length < 80) errs.cv = cvText.trim() ? "That looks too short — upload your full CV or paste more of it." : "Please add your CV to start this interview.";
     if (!consent) errs.consent = "Please confirm you've read how this interview works.";
     setErrors(errs);
     if (Object.keys(errs).length) return;
     setBusy(true);
     setError(null);
     try {
-      const r = await api.createCampaignSession(campaignToken, name.trim(), email.trim(), consent);
+      const r = await api.createCampaignSession(campaignToken, name.trim(), email.trim(), consent, info?.cvRequirement !== "off" ? cvText.trim() || undefined : undefined);
       sessionTokens.save(r.sessionId, { token: r.token, mode: "business", role: info?.title ?? "", createdAt: new Date().toISOString(), campaignToken });
       navigate(`/interview/${r.sessionId}`);
     } catch (err) {
@@ -121,6 +124,18 @@ export default function ApplyLanding() {
             <Field label="Email" error={errors.email} hint={`${info.company} will use this to contact you.`} required>
               {({ id, describedBy, invalid }) => <Input id={id} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} aria-describedby={describedBy} aria-invalid={invalid} />}
             </Field>
+            {info.cvRequirement !== "off" && (
+              <DocumentInput
+                label="Your CV"
+                kind="cv"
+                value={cvText}
+                onChange={setCvText}
+                maxChars={20000}
+                required={info.cvRequirement === "required"}
+                error={errors.cv}
+                hint={`Read on your device; only the text is sent. ${info.company} will see it, and the interviewer may ask about your experience.`}
+              />
+            )}
             <div className="rounded-xl bg-surface-2 p-4">
               <p className="flex items-center gap-2 text-sm font-bold text-fg-strong">
                 <ShieldCheck size={18} className="text-primary" /> What's monitored during this interview
@@ -130,7 +145,7 @@ export default function ApplyLanding() {
                   <li key={m}>• {m}</li>
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-muted-fg">Nothing is recorded: no audio or video is stored, and camera analysis runs only on your device. Your transcript and results are shared with {info.company}.</p>
+              <p className="mt-2 text-xs text-muted-fg">Nothing is recorded: no audio or video is stored, and camera analysis runs only on your device. Your transcript{info.cvRequirement !== "off" ? ", CV" : ""} and results are shared with {info.company}.</p>
             </div>
             <div>
               <Checkbox checked={consent} onChange={(e) => setConsent(e.target.checked)} label="I understand how this interview works and agree to the monitoring described above." />

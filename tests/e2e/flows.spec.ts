@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { CV_LINES, JOB_POSTING, makeDocx, makePdf } from "./fixtures";
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
 
@@ -70,8 +71,10 @@ test("business: workspace → campaign → applicant interview → review", asyn
   await page.getByRole("main").getByRole("link", { name: "New interview" }).first().click();
 
   await page.getByLabel("Job title").fill("Customer Success Specialist");
-  await page.getByLabel("Job description").fill("Own relationships with 40 mid-market customers, handle escalations and drive renewals.");
-  await page.getByRole("button", { name: "Suggest for this role" }).click();
+  await page.getByTestId("doc-job").getByRole("textbox").fill("Own relationships with 40 mid-market customers, handle escalations and drive renewals.\nRequirements\n- 3+ years in customer success\n- Experience with Zendesk");
+  await page.getByRole("button", { name: "Suggest from the posting" }).click();
+  await expect(page.getByText("Suggested from the job posting")).toBeVisible();
+  await page.getByLabel("Ask applicants for a CV").selectOption("required");
   await page.getByLabel("Minimum questions").selectOption("2");
   await page.getByLabel("Maximum questions").selectOption("3");
   await shot(page, "06-campaign-editor");
@@ -90,6 +93,10 @@ test("business: workspace → campaign → applicant interview → review", asyn
   await ap.getByLabel("Full name").fill("Sam Applicant");
   await ap.getByLabel("Email").fill(`sam+${stamp}@example.com`);
   await ap.getByLabel(/I understand how this interview works/).check();
+  await ap.getByRole("button", { name: "Continue to device check" }).click();
+  await expect(ap.getByText("Please add your CV to start this interview.")).toBeVisible();
+  await ap.getByTestId("doc-cv").locator('input[type="file"]').setInputFiles({ name: "sam-cv.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: makeDocx(CV_LINES.map((l) => l.replace("DANA WHITFIELD", "SAM APPLICANT"))) });
+  await expect(ap.getByTestId("doc-cv").getByText(/Word · \d+ words read/)).toBeVisible();
   await shot(ap, "08-apply-landing");
   await ap.getByRole("button", { name: "Continue to device check" }).click();
 
@@ -114,14 +121,64 @@ test("business: workspace → campaign → applicant interview → review", asyn
   // Reviewer sees the candidate.
   await page.reload();
   await expect(page.getByRole("link", { name: "Sam Applicant" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /CV match/ })).toBeVisible();
   await shot(page, "10-campaign-candidates");
   await page.getByRole("link", { name: "Sam Applicant" }).click();
   await expect(page.getByText("Summary for the hiring team")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Integrity signals" })).toBeVisible();
   await expect(page.getByText(/Tried to paste text/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "CV vs the job" })).toBeVisible();
+  await expect(page.getByText("Job match")).toBeVisible();
+  await expect(page.getByText("From the CV")).toBeVisible();
   await page.getByLabel("Status").selectOption("shortlisted");
   await page.getByLabel("Notes").fill("Clear, specific stories. Invite to panel.");
   await page.getByRole("button", { name: "Save decision" }).click();
   await expect(page.getByText("Decision saved")).toBeVisible();
   await shot(page, "11-candidate-review");
+});
+
+test("CV + job posting → CV review → tailored practice interview", async ({ page }) => {
+  await page.goto("/cv-review");
+  await expect(page.getByRole("heading", { name: /See how your CV fits the job/ })).toBeVisible();
+  await page.getByTestId("doc-cv").locator('input[type="file"]').setInputFiles({ name: "dana-cv.pdf", mimeType: "application/pdf", buffer: makePdf(CV_LINES) });
+  await expect(page.getByTestId("doc-cv").getByText(/PDF · 1 page/)).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("doc-job").getByRole("textbox").fill(JOB_POSTING);
+  await shot(page, "12-cv-review-form");
+  await page.getByRole("button", { name: "Review my CV" }).click();
+
+  await expect(page).toHaveURL(/\/cv-review\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+  await expect(page.getByText("Job match")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What to fix for this job" })).toBeVisible();
+  await expect(page.getByText("Fluent Spanish", { exact: true })).toBeVisible();
+  const reviewUrl = page.url();
+  await shot(page, "13-cv-review-result");
+
+  // Carry the CV and posting into a tailored practice interview.
+  await page.getByRole("button", { name: "Practise this interview" }).click();
+  await expect(page.getByRole("heading", { name: "Set up your interview" })).toBeVisible();
+  await expect(page.getByLabel(/Role you're interviewing for/)).toHaveValue(/Customer Support Manager/);
+  await expect(page.getByTestId("cv-profile").getByText("Dana Whitfield")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("job-profile")).toBeVisible();
+  await expect(page.getByLabel(/Your first name/)).toHaveValue("Dana Whitfield");
+  await page.getByRole("radio", { name: /Short/ }).check({ force: true });
+  await shot(page, "14-setup-with-cv");
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await expect(page.getByRole("heading", { name: /get you set up/i })).toBeVisible();
+  await page.getByRole("button", { name: "Captions only" }).click();
+  await page.getByRole("button", { name: "Type instead" }).first().click();
+  await page.getByRole("button", { name: "Start interview" }).click();
+  await expect(page.getByText(/Dana/).first()).toBeVisible();
+  await shot(page, "15-room-greeted-by-name");
+  await answerByTyping(page);
+
+  await expect(page).toHaveURL(/\/report\//, { timeout: 60_000 });
+  await expect(page.getByText("Based on the CV").first()).toBeVisible();
+  await page.getByRole("button", { name: "Review my CV for this job" }).click();
+  await expect(page).toHaveURL(/\/cv-review\/[0-9a-f-]{36}$/, { timeout: 60_000 });
+  await expect(page.getByText("Job match")).toBeVisible();
+
+  // The first review reopens on this device from its saved token.
+  await page.goto(reviewUrl);
+  await expect(page.getByRole("heading", { name: "What to fix for this job" })).toBeVisible();
 });

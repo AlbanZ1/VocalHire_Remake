@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Copy, DownloadSimple, LinkSimple, PencilSimple, ShieldWarning, SortAscending, SortDescending, Users } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { interviewLink, type CampaignRow } from "@/lib/org";
-import { INTEGRITY_LABELS, RECOMMENDATION_LABELS, REVIEW_STATUS_LABELS, SENIORITY_LABELS, formatDate, formatDuration } from "@/lib/format";
+import { INTEGRITY_LABELS, RECOMMENDATION_LABELS, REVIEW_STATUS_LABELS, SENIORITY_LABELS, formatDate, formatDuration, scoreTone } from "@/lib/format";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card, EmptyState, Stat } from "@/components/ui/Card";
 import { Alert, Badge } from "@/components/ui/Badge";
@@ -25,12 +25,13 @@ interface CandidateRow {
   recommendation: string | null;
   review_status: string;
   starr_scores: Record<StarrKey, number> | null;
+  cv_match: number | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
 }
 
-type SortKey = "overall_score" | "integrity_score" | "created_at" | "candidate_name";
+type SortKey = "overall_score" | "integrity_score" | "cv_match" | "created_at" | "candidate_name";
 
 export default function CampaignDetail() {
   const { campaignId = "" } = useParams();
@@ -48,7 +49,7 @@ export default function CampaignDetail() {
       supabase.from("campaigns").select("*").eq("id", campaignId).single(),
       supabase
         .from("interview_sessions")
-        .select("id, candidate_name, candidate_email, status, overall_score, integrity_score, integrity_level, recommendation, review_status, starr_scores, started_at, completed_at, created_at")
+        .select("id, candidate_name, candidate_email, status, overall_score, integrity_score, integrity_level, recommendation, review_status, starr_scores, cv_match:cv_review->matchScore, started_at, completed_at, created_at")
         .eq("campaign_id", campaignId)
         .in("status", ["in_progress", "completed"])
         .order("created_at", { ascending: false }),
@@ -98,7 +99,7 @@ export default function CampaignDetail() {
   );
 
   function exportCsv() {
-    const header = ["Name", "Email", "Status", "Overall", ...STARR_KEYS.map((k) => STARR_LABELS[k]), "Integrity score", "Integrity level", "AI recommendation", "Review status", "Completed"];
+    const header = ["Name", "Email", "Status", "Overall", ...STARR_KEYS.map((k) => STARR_LABELS[k]), "CV match", "Integrity score", "Integrity level", "AI recommendation", "Review status", "Completed"];
     const lines = visible.map((r) =>
       [
         r.candidate_name ?? "",
@@ -106,6 +107,7 @@ export default function CampaignDetail() {
         r.status,
         r.overall_score ?? "",
         ...STARR_KEYS.map((k) => r.starr_scores?.[k] ?? ""),
+        r.cv_match ?? "",
         r.integrity_score ?? "",
         r.integrity_level ?? "",
         r.recommendation ? RECOMMENDATION_LABELS[r.recommendation]?.label ?? r.recommendation : "",
@@ -212,6 +214,7 @@ export default function CampaignDetail() {
                   <th className="px-3 py-3">{sortBtn("candidate_name", "Candidate")}</th>
                   <th className="px-3 py-3">{sortBtn("overall_score", "Score")}</th>
                   <th className="px-3 py-3 font-semibold uppercase tracking-wide">STARR (S·T·A·R·R)</th>
+                  <th className="px-3 py-3">{sortBtn("cv_match", "CV match")}</th>
                   <th className="px-3 py-3">{sortBtn("integrity_score", "Integrity")}</th>
                   <th className="px-3 py-3 font-semibold uppercase tracking-wide">AI recommendation</th>
                   <th className="px-3 py-3 font-semibold uppercase tracking-wide">Review</th>
@@ -233,6 +236,7 @@ export default function CampaignDetail() {
                       </td>
                       <td className="px-3 py-3">{r.status === "completed" ? <MiniMeter value={r.overall_score} label="Overall score" /> : <Badge tone="info">In progress</Badge>}</td>
                       <td className="px-3 py-3 font-mono text-xs tabular-nums text-fg">{r.starr_scores ? STARR_KEYS.map((k) => (r.starr_scores![k] ?? 0).toFixed(1)).join(" · ") : "—"}</td>
+                      <td className="px-3 py-3 tabular-nums">{r.cv_match !== null && r.cv_match !== undefined ? <Badge tone={scoreTone(Number(r.cv_match))}>{Math.round(Number(r.cv_match))}</Badge> : <span className="text-muted-fg">—</span>}</td>
                       <td className="px-3 py-3">{integ ? <Badge tone={integ.tone}>{integ.label} · {Math.round(r.integrity_score ?? 0)}</Badge> : "—"}</td>
                       <td className="px-3 py-3">{rec ? <Badge tone={rec.tone}>{rec.label}</Badge> : "—"}</td>
                       <td className="px-3 py-3">

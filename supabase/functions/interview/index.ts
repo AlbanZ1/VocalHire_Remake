@@ -324,6 +324,8 @@ async function campaignPrep(c: CampaignRow, config: InterviewConfig): Promise<{ 
       return { ...(r.job as JobProfile), source: r.job?.source ?? "heuristic" };
     })) as JobProfile;
   }
+  // The campaign's own title and company are authoritative over anything read from the posting.
+  if (job) job = { ...job, title: c.title || job.title, company: config.companyName || job.company };
   if (!plan) plan = { competencies: (await planSession(ai, config, "business", { job })).competencies };
   await admin.from("campaigns").update({ settings: { ...s, plan, ...(job ? { jobProfile: job } : {}) } }).eq("id", c.id);
   return { plan: { ...plan, openingQuestion: null }, job };

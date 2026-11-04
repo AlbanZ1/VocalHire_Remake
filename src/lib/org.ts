@@ -34,6 +34,10 @@ export interface CampaignSettings {
   timeLimitMinutes?: number | null;
   integrity?: { level: "off" | "standard" | "strict"; requireCamera?: boolean; requireFullscreen?: boolean; voiceOnly?: boolean; blockPaste?: boolean };
   plan?: { competencies: { key: string; name: string; description: string }[] };
+  /** Ask applicants for a CV (default "optional"). */
+  cvRequirement?: "off" | "optional" | "required";
+  /** Job profile frozen by the server at the first applicant. */
+  jobProfile?: unknown;
 }
 
 export interface CampaignRow {

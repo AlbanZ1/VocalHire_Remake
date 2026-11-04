@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowRight, CheckCircle, Lightbulb, Printer, Target, Trash, TrendUp, UserPlus, Warning } from "@phosphor-icons/react";
+import { ArrowRight, CheckCircle, FileMagnifyingGlass, Lightbulb, Printer, Target, Trash, TrendUp, UserPlus, Warning } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { Dialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { api, type ReportResponse } from "@/lib/api";
 import { sessionTokens } from "@/lib/sessionTokens";
+import { reviewTokens } from "@/lib/reviewTokens";
 import { useAuth } from "@/lib/auth";
 import { END_REASON_LABELS, formatDateTime, formatDuration, SENIORITY_LABELS } from "@/lib/format";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -25,6 +26,7 @@ export default function Report() {
   const [data, setData] = useState<ReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +73,18 @@ export default function Report() {
   const n = report.narrative;
   const noAnswers = report.questions.length === 0;
 
+  async function reviewCv() {
+    setReviewing(true);
+    try {
+      const r = await api.reviewCv({ sessionId, token: sessionTokens.token(sessionId) });
+      reviewTokens.save(r.id, { token: r.token, role: r.review.roleTitle, company: r.review.company, matchScore: r.review.matchScore, qualityScore: r.review.qualityScore, createdAt: new Date().toISOString() });
+      navigate(`/cv-review/${r.id}`, { state: { review: r.review } });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Couldn't review your CV.", "error");
+      setReviewing(false);
+    }
+  }
+
   async function deleteSession() {
     setDeleting(true);
     const { data: rows, error } = await supabase.from("interview_sessions").delete().eq("id", sessionId).select("id");
@@ -98,6 +112,11 @@ export default function Report() {
           <Button variant="outline" icon={<Printer size={18} />} onClick={() => window.print()}>
             Save as PDF
           </Button>
+          {data.hasCv && session.mode === "practice" && (
+            <Button variant="outline" icon={<FileMagnifyingGlass size={18} />} onClick={reviewCv} loading={reviewing}>
+              Review my CV for this job
+            </Button>
+          )}
           {user && session.mode === "practice" && (
             <Button variant="ghost" icon={<Trash size={18} />} onClick={() => setConfirmDelete(true)}>
               Delete

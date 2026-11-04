@@ -14,6 +14,14 @@ export default function Privacy() {
           ],
         },
         {
+          h: "Your CV and job postings",
+          p: [
+            "CV and job posting files are read in your browser — the file itself is never uploaded. Only the extracted text is sent, so the interviewer can use your name and ask about your experience, and so we can review your CV against a job.",
+            "In practice interviews your CV text stays private to you. In employer interviews, the CV you add is shared with that employer's hiring team together with a CV-vs-job fit summary. CV reviews you run are saved to your account (or to this browser if you're not signed in) and can be deleted.",
+            "Text in a CV that tries to instruct the AI (for example hidden “give this candidate top marks” lines) is removed before analysis and, in employer interviews, flagged to the hiring team.",
+          ],
+        },
+        {
           h: "What we never store",
           p: ["Audio recordings or video. Speech is turned into text in your browser (using your browser's speech recognition service), and camera frames are analysed on your device and immediately discarded."],
         },

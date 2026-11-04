@@ -3,11 +3,13 @@ import { useNavigate, useParams } from "react-router";
 import { Eye, LockKey, MagicWand, Plus, Shield, ShieldCheck, ShieldSlash, X } from "@phosphor-icons/react";
 import { clsx } from "clsx";
 import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
+import { DocumentInput } from "@/components/documents/DocumentInput";
 import { useActiveOrg, type CampaignRow, type CampaignSettings } from "@/lib/org";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Alert } from "@/components/ui/Badge";
-import { Field, Input, RadioCards, Select, Switch, Textarea } from "@/components/ui/Field";
+import { Field, Input, RadioCards, Select, Switch } from "@/components/ui/Field";
 import { PageLoader } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { PageHeader } from "@/components/layout/Shells";
@@ -44,6 +46,8 @@ export default function CampaignEditor() {
   const [integrity, setIntegrity] = useState<IntegritySettings>(integrityPreset("standard"));
   const [status, setStatus] = useState<CampaignRow["status"]>("active");
   const [closesAt, setClosesAt] = useState("");
+  const [cvRequirement, setCvRequirement] = useState<NonNullable<CampaignSettings["cvRequirement"]>>("optional");
+  const [suggesting, setSuggesting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +84,7 @@ export default function CampaignEditor() {
         setIntegrity({ ...integrityPreset(s.integrity?.level ?? "standard"), ...(s.integrity ?? {}) } as IntegritySettings);
         setStatus(c.status);
         setClosesAt(c.closes_at ? c.closes_at.slice(0, 10) : "");
+        setCvRequirement(s.cvRequirement ?? "optional");
         setLoaded(true);
       });
   }, [campaignId]);
@@ -87,9 +92,30 @@ export default function CampaignEditor() {
   const toggleComp = (name: string) =>
     setCompetencies((cs) => (cs.includes(name) ? cs.filter((c) => c !== name) : cs.length >= 6 ? cs : [...cs, name]));
 
-  const suggest = () => {
+  const suggest = async () => {
+    // With a job posting, read it (any format) and take the competencies it actually asks for.
+    if (description.trim().length >= 60) {
+      setSuggesting(true);
+      try {
+        const { job } = await api.analyzeDocuments({ jobText: description });
+        if (job) {
+          const t = title.trim() || job.title || "";
+          if (!title.trim() && job.title) setTitle(job.title);
+          if (job.seniority) setSeniority(job.seniority);
+          const fromJob = planCompetencies(t, job.seniority ?? seniority, job.competencies, 5).map((c) => c.name);
+          setCompetencies(fromJob);
+          setErrors((e) => ({ ...e, title: "", competencies: "" }));
+          toast("Suggested from the job posting — adjust as you like", "success");
+          return;
+        }
+      } catch (e) {
+        toast(e instanceof Error ? e.message : "Couldn't read the job posting.", "error");
+      } finally {
+        setSuggesting(false);
+      }
+    }
     if (title.trim().length < 2) {
-      setErrors((e) => ({ ...e, title: "Enter the job title first so we can suggest competencies." }));
+      setErrors((e) => ({ ...e, title: "Enter the job title or a job posting first so we can suggest competencies." }));
       return;
     }
     setCompetencies(planCompetencies(title, seniority, [], 5).map((c) => c.name));
@@ -122,9 +148,12 @@ export default function CampaignEditor() {
       maxFollowUps: followUps,
       timeLimitMinutes: timeLimit,
       integrity,
+      cvRequirement,
     };
-    // Competencies are frozen at the first applicant; changing them starts a fresh plan.
-    if (competenciesChanged || !original) delete settings.plan;
+    // Competencies and the job profile are frozen at the first applicant; changing them starts fresh.
+    const descriptionChanged = original && (original.description ?? "") !== description.trim();
+    if (competenciesChanged || descriptionChanged || !original) delete settings.plan;
+    if (descriptionChanged || !original) delete settings.jobProfile;
     const payload = {
       title: title.trim(),
       department: department.trim() || null,
@@ -190,8 +219,25 @@ export default function CampaignEditor() {
                 </Select>
               )}
             </Field>
-            <Field label="Job description" hint="Used to tailor questions and follow-ups. Applicants see the first part of it." className="sm:col-span-2">
-              {({ id, describedBy }) => <Textarea id={id} rows={6} maxLength={6000} value={description} onChange={(e) => setDescription(e.target.value)} aria-describedby={describedBy} placeholder="Paste the job posting…" />}
+            <div className="sm:col-span-2">
+              <DocumentInput
+                label="Job posting"
+                kind="job"
+                value={description}
+                onChange={setDescription}
+                maxChars={15000}
+                preferPaste
+                hint="Paste or upload it from anywhere — your careers page, a job board, a Word or PDF file. The interviewer targets exactly what it asks for, and applicants can read it."
+              />
+            </div>
+            <Field label="Ask applicants for a CV" hint="With a CV, the interviewer greets applicants by name, asks about their own experience, and you get a CV-vs-job fit summary." className="sm:col-span-2">
+              {({ id, describedBy }) => (
+                <Select id={id} value={cvRequirement} onChange={(e) => setCvRequirement(e.target.value as typeof cvRequirement)} aria-describedby={describedBy}>
+                  <option value="optional">Optional — applicants can add one</option>
+                  <option value="required">Required — applicants must add one</option>
+                  <option value="off">Don't ask for a CV</option>
+                </Select>
+              )}
             </Field>
           </div>
         </Card>
@@ -201,8 +247,8 @@ export default function CampaignEditor() {
             title="Competencies to assess"
             description="2–6 skills. Every applicant is scored on exactly these, so results stay comparable."
             action={
-              <Button type="button" size="sm" variant="outline" icon={<MagicWand size={16} />} onClick={suggest}>
-                Suggest for this role
+              <Button type="button" size="sm" variant="outline" icon={<MagicWand size={16} />} onClick={suggest} loading={suggesting}>
+                {description.trim().length >= 60 ? "Suggest from the posting" : "Suggest for this role"}
               </Button>
             }
           />

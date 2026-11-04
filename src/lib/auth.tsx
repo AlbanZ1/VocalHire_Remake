@@ -3,6 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { api } from "./api";
 import { sessionTokens } from "./sessionTokens";
+import { reviewTokens } from "./reviewTokens";
 
 export interface Profile {
   id: string;
@@ -52,7 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (claimed.current !== s.user.id) {
       claimed.current = s.user.id;
       const guest = sessionTokens.guestPractice().map(({ id, entry }) => ({ id, token: entry.token }));
-      if (guest.length) api.claim(guest).catch(() => undefined);
+      const reviews = reviewTokens.all().map(({ id, entry }) => ({ id, token: entry.token }));
+      if (guest.length || reviews.length) api.claim(guest, reviews).catch(() => undefined);
     }
   }, []);
 

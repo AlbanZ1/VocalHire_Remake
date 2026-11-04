@@ -3,6 +3,9 @@ import { supabase } from "./supabase";
 import { INTERVIEW_FUNCTION, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/config";
 import type { QuestionView, SubmitResult } from "../../supabase/functions/_shared/orchestrator.ts";
 import type {
+  CvProfile,
+  CvReview,
+  JobProfile,
   IntegrityEventInput,
   IntegritySettings,
   InterviewConfig,
@@ -12,7 +15,9 @@ import type {
   TurnRow,
 } from "../../supabase/functions/_shared/types.ts";
 
-export type { QuestionView, SubmitResult };
+export type { QuestionView, SubmitResult, CvProfile, CvReview, JobProfile };
+
+export type CvRequirement = "off" | "optional" | "required";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -58,6 +63,7 @@ export interface CampaignInfo {
   integrity: IntegritySettings;
   monitored: string[];
   timeLimitMinutes: number | null;
+  cvRequirement: CvRequirement;
 }
 
 export type ReportTurn = Pick<
@@ -70,6 +76,20 @@ export interface ReportResponse {
   report: SessionReport | null;
   plan?: InterviewPlan | null;
   turns?: ReportTurn[];
+  hasCv?: boolean;
+}
+
+export interface DocumentAnalysis {
+  cv: CvProfile | null;
+  job: JobProfile | null;
+  warnings: string[];
+}
+
+export interface SavedReview {
+  id: string;
+  token?: string;
+  review: CvReview;
+  createdAt?: string;
 }
 
 async function call<T>(action: string, body: Record<string, unknown> = {}, opts: { keepalive?: boolean } = {}): Promise<T> {
@@ -115,6 +135,7 @@ export interface PracticeConfigInput {
   jobDescription?: string;
   resumeSummary?: string;
   companyName?: string;
+  candidateName?: string;
   focusCompetencies?: string[];
   fixedFirstQuestion?: string;
   maxFollowUps?: number;
@@ -124,10 +145,13 @@ export interface PracticeConfigInput {
 
 export const api = {
   engine: () => call<{ engine: "claude" | "heuristic"; model: string | null }>("engine"),
-  createPractice: (config: PracticeConfigInput) => call<{ sessionId: string; token: string }>("create_practice", { config }),
+  createPractice: (config: PracticeConfigInput, cvText?: string) => call<{ sessionId: string; token: string }>("create_practice", { config, cvText }),
   campaignInfo: (token: string) => call<CampaignInfo>("campaign_info", { token }),
-  createCampaignSession: (token: string, name: string, email: string, consent: boolean) =>
-    call<{ sessionId: string; token: string }>("create_campaign_session", { token, name, email, consent }),
+  createCampaignSession: (token: string, name: string, email: string, consent: boolean, cvText?: string) =>
+    call<{ sessionId: string; token: string }>("create_campaign_session", { token, name, email, consent, cvText }),
+  analyzeDocuments: (docs: { cvText?: string; jobText?: string }) => call<DocumentAnalysis>("analyze_documents", docs),
+  reviewCv: (input: { cvText: string; jobText?: string } | { sessionId: string; token?: string }) => call<SavedReview & { token: string }>("review_cv", input),
+  getCvReview: (id: string, token?: string) => call<SavedReview>("get_cv_review", { id, token }),
   state: (sessionId: string, token?: string) => call<{ session: PublicSession; question: QuestionView | null }>("state", { sessionId, token }),
   begin: (sessionId: string, token?: string) =>
     call<{ session: PublicSession; question?: QuestionView; done?: true }>("begin", { sessionId, token }),
@@ -137,5 +161,6 @@ export const api = {
     call<{ stored: number }>("events", { sessionId, token, events }, { keepalive }),
   end: (sessionId: string, token?: string, reason?: "time_limit") => call<SubmitResult>("end", { sessionId, token, reason }),
   report: (sessionId: string, token?: string) => call<ReportResponse>("report", { sessionId, token }),
-  claim: (sessions: { id: string; token: string }[]) => call<{ claimed: number }>("claim", { sessions }),
+  claim: (sessions: { id: string; token: string }[], reviews: { id: string; token: string }[] = []) =>
+    call<{ claimed: number; reviews: number }>("claim", { sessions, reviews }),
 };

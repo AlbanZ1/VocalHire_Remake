@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowRight, CalendarCheck, ChartLineUp, Fire, Microphone, Play, Target, Trophy } from "@phosphor-icons/react";
+import { ArrowRight, CalendarCheck, ChartLineUp, FileMagnifyingGlass, Fire, Microphone, Play, Target, Trophy } from "@phosphor-icons/react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { formatDate, relativeTime } from "@/lib/format";
@@ -44,9 +44,57 @@ function streakDays(dates: string[]): number {
   return streak;
 }
 
+interface ReviewRow {
+  id: string;
+  role_title: string | null;
+  company: string | null;
+  match_score: number | null;
+  quality_score: number | null;
+  created_at: string;
+}
+
+function CvReviews({ reviews }: { reviews: ReviewRow[] }) {
+  return (
+    <Card>
+      <CardHeader
+        title="CV reviews"
+        description="How your CV matches the jobs you're going for."
+        action={
+          <ButtonLink to="/cv-review" variant="outline" size="sm" icon={<FileMagnifyingGlass size={16} />}>
+            Review a CV
+          </ButtonLink>
+        }
+      />
+      {reviews.length === 0 ? (
+        <p className="px-5 pb-5 text-sm text-muted-fg">Add your CV and a job posting to see what to fix before you apply.</p>
+      ) : (
+        <ul className="divide-y divide-border-soft">
+          {reviews.map((r) => (
+            <li key={r.id}>
+              <Link to={`/cv-review/${r.id}`} className="flex flex-wrap items-center gap-4 px-5 py-4 transition-colors hover:bg-surface-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-fg-strong">
+                    {r.role_title ?? "General CV check"}
+                    {r.company ? <span className="font-normal text-muted-fg"> · {r.company}</span> : null}
+                  </p>
+                  <p className="text-sm text-muted-fg">{formatDate(r.created_at, { dateStyle: "medium" })}</p>
+                </div>
+                {r.match_score !== null && <Badge tone="neutral">Match {Math.round(Number(r.match_score))}</Badge>}
+                {r.quality_score !== null && <Badge tone="neutral">Quality {Math.round(Number(r.quality_score))}</Badge>}
+                <ArrowRight size={18} className="text-muted-fg" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [reviews, setReviews] = useState<ReviewRow[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -58,6 +106,12 @@ export default function Dashboard() {
       .order("created_at", { ascending: false })
       .limit(100)
       .then(({ data }) => setRows(((data ?? []) as unknown as (Row & { delivery?: { confidenceScore?: number } })[]).map((r) => ({ ...r, report: { delivery: r.delivery } }))));
+    supabase
+      .from("cv_reviews")
+      .select("id, role_title, company, match_score, quality_score, created_at")
+      .order("created_at", { ascending: false })
+      .limit(10)
+      .then(({ data }) => setReviews((data ?? []) as ReviewRow[]));
   }, [user]);
 
   const completed = useMemo(() => (rows ?? []).filter((r) => r.status === "completed" && r.overall_score !== null), [rows]);
@@ -177,6 +231,8 @@ export default function Dashboard() {
           </ul>
         </Card>
       )}
+
+      <CvReviews reviews={reviews} />
     </div>
   );
 }

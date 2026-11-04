@@ -448,6 +448,7 @@ function detectTitle(lines: string[], text: string): string | null {
   }
   for (const l of lines.slice(0, 5)) {
     const t = l.replace(/[|–—]\s.*$/, "").trim();
+    if (BULLET_RE.test(l) || /^\d/.test(t) || /\byears?\b/i.test(t)) continue;
     if (jobSectionOf(t) || /^(about the job|job description|description|overview)$/i.test(t)) continue;
     if (t.split(/\s+/).length <= 8 && !/[.!?]$/.test(t) && !CONTACT_RE.test(t) && /\p{L}/u.test(t)) return clipWords(t, 10);
   }
@@ -492,7 +493,7 @@ function jobKeywords(requirements: string[], nice: string[], responsibilities: s
       words.forEach((raw, i) => {
         const w = raw.replace(/^[./-]+|[./-]+$/g, "");
         const lower = w.toLowerCase();
-        if (w.length < 2 || /^\d+\+?$/.test(w) || JD_STOP.has(lower) || KEYWORD_STOP.has(lower)) return;
+        if (w.length < 2 || /^\d+\+?$/.test(w) || JD_STOP.has(lower) || KEYWORD_STOP.has(lower) || REQ_FILLER.has(stem(lower)) || /^hands(-on)?$/.test(lower)) return;
         const acronym = /^[A-Z0-9+#./-]{2,}$/.test(w) && /[A-Z]/.test(w);
         const properNoun = i > 0 && /^\p{Lu}/u.test(w);
         if (!acronym && !properNoun && w.length < 4) return;
@@ -508,10 +509,11 @@ function jobKeywords(requirements: string[], nice: string[], responsibilities: s
     }
   }
   const ranked = [...score.values()].filter((x) => x.n >= 1.5).sort((a, b) => b.n - a.n).map((x) => x.word);
-  // Drop single words already covered by a chosen phrase.
+  // Drop single words already covered by a likely phrase ("success" when "customer success" is there).
+  const phrases = ranked.filter((k) => k.includes(" ")).slice(0, 15).map((p) => p.toLowerCase().split(" "));
   const out: string[] = [];
   for (const k of ranked) {
-    if (out.some((o) => o.includes(" ") && o.split(" ").includes(k.toLowerCase()))) continue;
+    if (!k.includes(" ") && phrases.some((p) => p.includes(k.toLowerCase()))) continue;
     out.push(k);
     if (out.length >= 15) break;
   }
@@ -804,6 +806,20 @@ function rewriteWeakBullet(b: string): string {
   return after.charAt(0).toUpperCase() + after.slice(1);
 }
 
+/** What to do about a failed check (the check's note says what is wrong). */
+const CHECK_ADVICE: Record<string, (note: string) => string> = {
+  contact: () => "Put your email address and phone number at the top, next to your name, so recruiters can reach you.",
+  links: () => "Add your LinkedIn profile next to your contact details — and a portfolio or GitHub link if your work can be shown.",
+  length: (note) => (/add more|short|only about/i.test(note) ? "Give your most relevant roles 3–5 bullets each: what you did and what changed because of you." : "Trim older or less relevant detail so your strongest evidence fits on one or two pages."),
+  pronouns: () => "Drop “I” and “my” from bullet points — start each one with a verb instead (“Led…”, “Reduced…”).",
+  bullet_length: () => "Split long bullets so each makes one point in under about 30 words.",
+  bullets: () => "Present each role as short bullet points rather than paragraphs — recruiters skim.",
+  sections: () => "Use clear headings recruiters expect: Profile, Experience, Skills, Education.",
+  summary: () => "Add a two- or three-line profile at the top saying who you are and why you fit the role — see the tailored summary below.",
+  dates: () => "Add start and end dates (month and year) to every role so your timeline is easy to follow.",
+  personal: () => "Remove date of birth, marital status, nationality or ID numbers — they aren't needed and can invite bias.",
+};
+
 export function heuristicCvReview(cvText: string, cv: CvProfile, jobText: string, job: JobProfile | null): Omit<CvReview, "generatedAt" | "injectionDetected"> {
   const coverage = job ? matchRequirements(cvText, cv, job) : [];
   const checks = cvChecks(cvText, cv, job);
@@ -847,7 +863,7 @@ export function heuristicCvReview(cvText: string, cv: CvProfile, jobText: string
     });
   }
   for (const c of checks.filter((x) => !x.ok && !["keywords", "quantified", "verbs"].includes(x.key)).slice(0, 3)) {
-    fixes.push({ area: c.label, priority: c.key === "contact" ? "high" : "low", issue: c.note, suggestion: c.note, before: "", after: "" });
+    fixes.push({ area: c.label, priority: c.key === "contact" || c.key === "personal" ? "high" : c.key === "summary" || c.key === "dates" ? "medium" : "low", issue: c.note, suggestion: CHECK_ADVICE[c.key]?.(c.note) ?? c.note, before: "", after: "" });
   }
 
   const strengths: string[] = [];
@@ -862,7 +878,7 @@ export function heuristicCvReview(cvText: string, cv: CvProfile, jobText: string
     ...checks.filter((c) => !c.ok).slice(0, 2).map((c) => c.note),
   ].slice(0, 5);
 
-  const topSkills = (job ? cv.skills.filter((s) => significant(job.keywords.join(" ")).includes(stem(s))) : []).concat(cv.skills).slice(0, 3);
+  const topSkills = uniq((job ? cv.skills.filter((s) => significant(job.keywords.join(" ")).includes(stem(s))) : []).concat(cv.skills), 3);
   const roleName = job?.title ?? cv.roles[0]?.title ?? "my next role";
   const tailoredSummary = [
     `${cv.roles[0]?.title ?? "[Your current role]"} with ${cv.yearsExperience ? `${cv.yearsExperience}+ years of` : "[X years of]"} experience${topSkills.length ? ` in ${topSkills.join(", ")}` : " in [your key skills]"}.`,

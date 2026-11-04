@@ -194,6 +194,7 @@ export function QuestionBreakdown({
                   <Badge tone={tone}>{scoreLabel(q.score)}</Badge>
                   {follow.length > 0 && <span>· {follow.length} follow-up{follow.length > 1 ? "s" : ""}</span>}
                   {main?.flags?.includes("recycled_answer") && <Badge tone="warning">Reused answer</Badge>}
+                  {main?.flags?.includes("cv_anchor") && <Badge tone="info">Based on the CV</Badge>}
                 </span>
                 <span className="mt-1 block font-semibold text-fg-strong">{q.question}</span>
               </span>

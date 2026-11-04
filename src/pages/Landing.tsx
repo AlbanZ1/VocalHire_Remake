@@ -4,9 +4,11 @@ import {
   ChartBar,
   CheckCircle,
   Eye,
+  FileMagnifyingGlass,
   Fingerprint,
   GitBranch,
   Heart,
+  IdentificationCard,
   LinkSimple,
   Lock,
   Microphone,
@@ -117,7 +119,7 @@ export default function Landing() {
       <Section id="how" eyebrow="How it works" title="Three steps to a better interview">
         <ol className="grid gap-5 md:grid-cols-3">
           {[
-            { n: "1", t: "Tell us the role", b: "Job title, seniority and (optionally) the job description. VocalHire picks the competencies that matter for that role." },
+            { n: "1", t: "Tell us the role", b: "Pick a role — or add your CV and the job posting. VocalHire picks the competencies that matter for that job." },
             { n: "2", t: "Talk it through", b: "Answer out loud. The interviewer listens, follows up on gaps, and keeps going until it has a confident read of your strengths." },
             { n: "3", t: "Get your STARR report", b: "Scores for every answer, strengths, growth areas, delivery coaching (pace, filler words, eye contact) and a practice plan." },
           ].map((s) => (
@@ -130,8 +132,25 @@ export default function Landing() {
         </ol>
       </Section>
 
+      {/* CV + job posting */}
+      <Section id="cv" eyebrow="Your CV + the job" title="An interview built from your CV and the job you want" intro="Upload your CV (PDF or Word) and paste the job posting from anywhere. VocalHire reads both, then interviews you the way that employer would." tint>
+        <div className="grid gap-5 md:grid-cols-3">
+          <Feature icon={<IdentificationCard size={24} />} title="Knows who you are" body={"Greets you by name and asks about your real experience — \"Your CV mentions cutting churn by 18%. Walk me through how you did that.\""} />
+          <Feature icon={<Briefcase size={24} />} title="Knows what the job needs" body="Any text works: job boards, careers pages, recruiter emails, PDFs. Questions target exactly what the posting asks for." />
+          <Feature icon={<FileMagnifyingGlass size={24} />} title="Fix your CV for that job" body="A match score, which requirements you meet (quoted from your CV), what's missing, rewrites for weak lines and a tailored summary. It never invents experience." />
+        </div>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <ButtonLink to="/cv-review" variant="primary" size="lg" icon={<FileMagnifyingGlass size={20} />}>
+            Review my CV
+          </ButtonLink>
+          <ButtonLink to="/practice/new" variant="outline" size="lg" icon={<Microphone size={20} />}>
+            Practise with my CV
+          </ButtonLink>
+        </div>
+      </Section>
+
       {/* STARR */}
-      <Section id="starr" eyebrow="The scoring method" title="Every answer scored with STARR" intro="Situation, Task, Action, Result — plus Reflection, the second R that shows you learn from experience. Each element is scored 0–4 against clear anchors, and every score must be backed by a quote from your own answer." tint>
+      <Section id="starr" eyebrow="The scoring method" title="Every answer scored with STARR" intro="Situation, Task, Action, Result — plus Reflection, the second R that shows you learn from experience. Each element is scored 0–4 against clear anchors, and every score must be backed by a quote from your own answer.">
         <div className="grid gap-4 md:grid-cols-5">
           {STARR_KEYS.map((k) => (
             <div key={k} className="vh-card p-5">
@@ -165,13 +184,13 @@ export default function Landing() {
       </Section>
 
       {/* Business */}
-      <Section id="business" eyebrow="For hiring teams" title="Screen every applicant with the same fair, structured interview" intro="Create an interview for a role, share one link, and get ranked results with transcripts, evidence and integrity signals — your team makes the final call.">
+      <Section id="business" eyebrow="For hiring teams" title="Screen every applicant with the same fair, structured interview" intro="Create an interview for a role, share one link, and get ranked results with transcripts, evidence and integrity signals — your team makes the final call." tint>
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           <Feature icon={<LinkSimple size={24} />} title="One link per role" body="Applicants open the link, consent, and interview in their browser — no account or download needed." />
           <Feature icon={<UsersThree size={24} />} title="Fair by design" body="Every applicant is assessed on the same frozen set of competencies with the same rubric, so results are comparable." />
           <Feature icon={<ChartBar size={24} />} title="Ranked, explainable results" body="Overall and STARR scores, competency breakdowns, quoted evidence and an advisory recommendation for each candidate." />
           <Feature icon={<ShieldCheck size={24} />} title="Integrity monitoring" body="Standard or strict modes with focus, paste and camera signals — summarised as a score with a timeline for review." />
-          <Feature icon={<Sparkle size={24} />} title="Tailored to your job" body="Paste the job description and choose competencies; follow-ups dig into the details that matter for the role." />
+          <Feature icon={<Sparkle size={24} />} title="Tailored to your job" body="Paste or upload the job posting and ask applicants for a CV. Questions dig into each applicant's own experience, and you get a CV-vs-job fit summary." />
           <Feature icon={<CheckCircle size={24} />} title="Human decisions" body="Shortlist, advance or reject with notes. The AI recommendation is advisory and never auto-rejects anyone." />
         </div>
         <div className="mt-8">
@@ -182,7 +201,7 @@ export default function Landing() {
       </Section>
 
       {/* Integrity */}
-      <Section id="integrity" eyebrow="Anti-cheating" title="AI-written answers don't survive a real conversation" intro="No single check stops every cheater, so VocalHire layers them. Each signal is weak on its own; together they give reviewers a clear picture." tint>
+      <Section id="integrity" eyebrow="Anti-cheating" title="AI-written answers don't survive a real conversation" intro="No single check stops every cheater, so VocalHire layers them. Each signal is weak on its own; together they give reviewers a clear picture.">
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           <Feature icon={<GitBranch size={24} />} title="Adaptive depth probes" body="Polished-but-generic answers trigger follow-ups only someone who lived the story can answer. A big drop in detail is flagged." />
           <Feature icon={<Microphone size={24} />} title="Voice-only answers" body="In strict mode applicants must speak, so text can't be pasted from an AI tool. Long silences before suspiciously fluent answers are noted." />

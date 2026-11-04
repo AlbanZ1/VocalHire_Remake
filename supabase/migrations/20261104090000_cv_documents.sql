@@ -1,6 +1,10 @@
 -- CV & job-posting features: CV text and profiles on interviews, saved CV reviews, a cache for
 -- (costly) document analyses, and a generic rate-limit log.
 
+-- Job postings pasted from any source can be long.
+alter table public.campaigns drop constraint if exists campaigns_description_check;
+alter table public.campaigns add constraint campaigns_description_check check (char_length(description) <= 15000);
+
 alter table public.interview_sessions
   add column candidate_cv text check (char_length(candidate_cv) <= 20000),
   add column cv_profile jsonb,
