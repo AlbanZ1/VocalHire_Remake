@@ -128,9 +128,24 @@ export class Interview {
     return s;
   }
 
+  /**
+   * A session whose engine decided to end but whose report was never written (e.g. the function
+   * timed out while generating it) is finalised now. Returns true if the session is finished.
+   */
+  async recover(session: SessionRow): Promise<boolean> {
+    if (session.status !== "in_progress") return session.status === "completed" || session.status === "abandoned";
+    const st = session.state;
+    if (st && !st.pending && st.endReason) {
+      await this.finalize(session, st.endReason);
+      return true;
+    }
+    return false;
+  }
+
   /** Start (or resume) the interview: returns the pending question. */
   async begin(session: SessionRow): Promise<{ question: QuestionView } | { done: true }> {
     if (session.status === "completed" || session.status === "abandoned") return { done: true };
+    if (await this.recover(session)) return { done: true };
     const plan = session.plan;
     if (!plan || plan.competencies.length === 0) throw new InterviewError("invalid", "Interview has no plan.");
     if (session.state?.pending) return { question: this.current(session)! };
@@ -196,6 +211,7 @@ export class Interview {
     input: { seq: number; answer: string; mode: AnswerMode; metrics?: Partial<SpeechMetrics> | null },
   ): Promise<SubmitResult> {
     if (session.status !== "in_progress") throw new InterviewError("finished", "This interview is not in progress.");
+    if (await this.recover(session)) throw new InterviewError("finished", "This interview has already finished.");
     const state = session.state!;
     const config = session.config;
     const plan = session.plan!;

@@ -153,3 +153,28 @@ describe("Claude provider", () => {
     expect(out.openingQuestion).toMatch(/technically hard/);
   });
 });
+
+describe("Claude provider resilience", () => {
+  it("retries without the fallback beta when the API rejects it", async () => {
+    const cap: { body: Record<string, unknown> }[] = [];
+    let n = 0;
+    const f = (async (_i: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      cap.push({ body });
+      if (n++ === 0) {
+        return new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "unsupported" } }), { status: 400, headers: { "content-type": "application/json" } });
+      }
+      return new Response(
+        JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: JSON.stringify(goodEval) }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    const ai = createClaudeAI({ apiKey: "t", fetch: f });
+    const out = await ai.evaluate(input());
+    expect(out.analysis.source).toBe("claude");
+    expect(cap[0].body.fallbacks).toBe("default");
+    expect("fallbacks" in cap[1].body).toBe(false);
+    await ai.evaluate(input());
+    expect("fallbacks" in cap[2].body).toBe(false);
+  });
+});

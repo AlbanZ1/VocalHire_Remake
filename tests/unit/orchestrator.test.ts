@@ -170,3 +170,19 @@ describe("recycled answers", () => {
     expect(turns[1].score!).toBeLessThan(turns[0].score! * 0.7);
   });
 });
+
+describe("recovery", () => {
+  it("finalises a session whose report generation was interrupted", async () => {
+    const { store, iv, id } = await setup({ config: { includeIntro: false, maxFollowUps: 0, minMainQuestions: 1, maxMainQuestions: 1 } });
+    const b = await iv.begin(await iv.load(id));
+    if (!("question" in b)) throw new Error();
+    // Simulate a crash right after the engine decided to end (state saved, report not written).
+    const s = (await store.getSession(id))!;
+    await store.updateSession(id, { state: { ...s.state!, pending: null, endReason: "confident" } });
+    const r = await iv.begin(await iv.load(id));
+    expect(r).toEqual({ done: true });
+    const after = (await store.getSession(id))!;
+    expect(after.status).toBe("completed");
+    expect(after.report?.endReason).toBe("confident");
+  });
+});

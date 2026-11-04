@@ -20,3 +20,4 @@ supabase/functions/interview-local
 __pycache__/
 *.pyc
 public/mediapipe
+dist-functions

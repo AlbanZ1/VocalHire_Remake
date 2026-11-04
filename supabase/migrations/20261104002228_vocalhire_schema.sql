@@ -121,6 +121,13 @@ create table public.interview_session_secrets (
   created_at timestamptz not null default now()
 );
 create index interview_session_secrets_ip_idx on public.interview_session_secrets (client_ip_hash, created_at desc);
+create index interview_session_secrets_campaign_idx on public.interview_session_secrets (campaign_id, client_ip_hash, created_at desc);
+
+-- Foreign-key indexes (cascades and reviewer lookups).
+create index organizations_created_by_idx on public.organizations (created_by);
+create index campaigns_created_by_idx on public.campaigns (created_by);
+create index interview_sessions_reviewed_by_idx on public.interview_sessions (reviewed_by);
+create index interview_sessions_campaign_email_idx on public.interview_sessions (campaign_id, candidate_email);
 
 create table public.interview_turns (
   id uuid primary key default gen_random_uuid(),
@@ -405,7 +412,13 @@ create policy "events: viewers read" on public.integrity_events
   for select to authenticated using (public.can_view_session(session_id));
 revoke insert, update, delete on public.integrity_events from authenticated;
 
--- Function execution: only signed-in users can call the org helpers.
+-- Function execution: only signed-in users can call the org and RLS helpers.
+revoke execute on function public.is_org_member(uuid) from public, anon;
+revoke execute on function public.is_org_admin(uuid) from public, anon;
+revoke execute on function public.can_view_session(uuid) from public, anon;
+grant execute on function public.is_org_member(uuid) to authenticated;
+grant execute on function public.is_org_admin(uuid) to authenticated;
+grant execute on function public.can_view_session(uuid) to authenticated;
 revoke execute on function public.create_organization(text) from public, anon;
 revoke execute on function public.add_org_member(uuid, text, public.org_role) from public, anon;
 revoke execute on function public.list_org_members(uuid) from public, anon;

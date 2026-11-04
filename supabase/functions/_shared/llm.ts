@@ -105,12 +105,12 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
   const client = new Anthropic({
     apiKey: opts.apiKey,
     baseURL: opts.baseURL,
-    timeout: opts.timeoutMs ?? 45_000,
+    timeout: opts.timeoutMs ?? 40_000,
     maxRetries: 1,
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
   const model = opts.model || DEFAULT_MODEL;
-  const useFallbacks = opts.useFallbacks ?? true;
+  let useFallbacks = opts.useFallbacks ?? true;
 
   async function callJSON<T>(args: {
     system: string;
@@ -127,9 +127,19 @@ export function createClaudeAI(opts: ClaudeOptions): InterviewAI {
       messages: [{ role: "user" as const, content: args.user }],
       output_config: { effort: args.effort, format: { type: "json_schema" as const, schema: args.schema } },
     };
-    const response = useFallbacks
-      ? await client.beta.messages.create({ ...base, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" })
-      : await client.messages.create(base);
+    let response;
+    if (useFallbacks) {
+      try {
+        response = await client.beta.messages.create({ ...base, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+      } catch (e) {
+        // If this account/model rejects the refusal-fallback beta, stop sending it and retry once.
+        if (!(e instanceof Anthropic.BadRequestError)) throw e;
+        useFallbacks = false;
+        response = await client.messages.create(base);
+      }
+    } else {
+      response = await client.messages.create(base);
+    }
     if (response.stop_reason === "refusal") throw new ModelOutputError("model declined the request");
     if (response.stop_reason === "max_tokens") throw new ModelOutputError("model output truncated");
     let text = "";

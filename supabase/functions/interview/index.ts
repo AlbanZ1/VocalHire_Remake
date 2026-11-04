@@ -385,6 +385,7 @@ const actions: Record<string, Handler> = {
 
   async state(req, body) {
     const { session } = await loadAuthorized(req, body, ["owner", "token"]);
+    if (await interview.recover(session)) return { session: publicSession(await interview.load(session.id)), question: null };
     return { session: publicSession(session), question: interview.current(session) };
   },
 
