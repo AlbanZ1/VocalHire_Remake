@@ -5,6 +5,8 @@
 - **People practising for interviews** — especially anyone who gets nervous. VocalHire talks with you like a real interviewer, listens to every answer, adapts the next question to what you said, and coaches you with STARR feedback.
 - **Businesses screening applicants** — create an interview for a role, share one link, and get ranked, explainable results with transcripts, quoted evidence and integrity signals. Humans make the final decision.
 
+**The complete guide** — what VocalHire is, how every part works, the decisions behind it, costs and pricing ideas, the launch checklist and an operations handbook: [docs/VocalHire-Complete-Guide.pdf](docs/VocalHire-Complete-Guide.pdf)
+
 ---
 
 ## What's live right now
@@ -232,13 +234,14 @@ Trust and safety:
 
 ```
 Browser (Vite + React 19 + Tailwind v4)
-  ├─ Web Speech API (speech → text), SpeechSynthesis (interviewer voice)
+  ├─ Web Speech API (speech → text); interviewer voice: Amazon Polly audio or SpeechSynthesis
   ├─ MediaPipe Face Landmarker (on-device integrity + eye-contact coaching)
   ├─ supabase-js (auth, RLS-protected reads, review decisions)
   └─ POST /functions/v1/interview ──▶ Supabase Edge Function (Deno)
                                         ├─ orchestrator (state machine, stopping rule)
                                         ├─ guardrails, rubric, integrity scoring
                                         ├─ Claude via @anthropic-ai/sdk  ─or─  built-in STARR engine
+                                        ├─ Amazon Polly (natural voices, optional, signed lines only)
                                         └─ Postgres (service role)
 ```
 
@@ -291,7 +294,7 @@ scripts/                     smoke test, bundlers, asset helpers
 npm test
 ```
 
-Runs 53 unit tests: rubric, guardrails, heuristic analyser, stopping rule, integrity, full interview flows, and the Claude provider against a mock API.
+Runs 93 unit tests: rubric, guardrails, heuristic analyser, stopping rule, integrity, CV and job-posting analysis, full interview flows, the Claude provider against a mock API, AWS Signature V4 (checked against AWS's published example) and the voice code.
 
 Full local stack (Docker):
 
@@ -307,13 +310,15 @@ npm run functions:bundle-local && npx supabase functions serve --no-verify-jwt -
 FUNCTION=interview-local npm run smoke
 ```
 
-`npm run smoke` runs 15 API + security checks: token auth, anonymous access blocked, score tampering blocked, prompt-injection handling, cross-organisation isolation, frozen campaign plans, one attempt per applicant.
+`npm run smoke` runs 21 API + security checks: token auth, anonymous access blocked, score tampering blocked, prompt-injection handling, cross-organisation isolation, frozen campaign plans, one attempt per applicant, CV and job-posting features, and the voice endpoint (only signed lines are spoken).
 
 For end-to-end browser tests, run the app against the local stack (`VITE_SUPABASE_URL=http://127.0.0.1:54321`, `VITE_INTERVIEW_FUNCTION=interview-local`) and:
 
 ```bash
 npm run e2e
 ```
+
+Runs 5 browser tests: guest practice → report, the full hiring flow, CV review → tailored practice interview, and natural-voice playback with its fallback (voice endpoint mocked).
 
 **Redeploying the edge function** after changing its code:
 
