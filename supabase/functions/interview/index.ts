@@ -176,7 +176,9 @@ const POLLY: AwsCredentials | null = (() => {
     region: Deno.env.get("VOCALHIRE_POLLY_REGION") || Deno.env.get("AWS_REGION") || "eu-central-1",
   };
 })();
-const TTS_ENGINE: PollyEngine = Deno.env.get("VOCALHIRE_TTS_ENGINE") === "neural" ? "neural" : "generative";
+// Neural by default: about half the price of generative, with a much larger free tier. Set
+// VOCALHIRE_TTS_ENGINE=generative for the most human-sounding (and more expensive) voices.
+const TTS_ENGINE: PollyEngine = Deno.env.get("VOCALHIRE_TTS_ENGINE") === "generative" ? "generative" : "neural";
 const MAX_SPOKEN_CHARS = 1200;
 const speechSigner = createSpeechSigner(SERVICE_KEY);
 

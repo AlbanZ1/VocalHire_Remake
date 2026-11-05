@@ -75,10 +75,10 @@ Without this, the interviewer uses each visitor's built-in browser voice (free, 
 | `AWS_ACCESS_KEY_ID` | the user's access key ID |
 | `AWS_SECRET_ACCESS_KEY` | the user's secret access key |
 | `VOCALHIRE_POLLY_REGION` | optional, default `eu-central-1` (Frankfurt; has every generative voice) |
-| `VOCALHIRE_TTS_ENGINE` | optional: `generative` (default, most natural, ~$30 per 1M characters) or `neural` (~$16 per 1M) |
+| `VOCALHIRE_TTS_ENGINE` | optional: `neural` (default, ~$16 per 1M characters, larger free tier) or `generative` (most human-sounding, ~$30 per 1M) |
 | `VOCALHIRE_TTS` | optional: `off` to switch natural voices off without removing the keys |
 
-Voices: Ruth (default), Matthew, Danielle, Stephen (American), Amy, Brian (British), Olivia (Australian), Kajal (Indian), Niamh (Irish), Ayanda (South African). Candidates pick one in the device check; hiring teams set one voice for all applicants in the interview settings. A typical interview speaks about 3,000–4,000 characters (roughly 10–12¢ generative, 5–6¢ neural). The voice endpoint only speaks lines the API itself signed for that interview, and lines that repeat (greetings, closings, the voice sample) are stored as audio and reused.
+Voices: Ruth (default), Matthew, Danielle, Stephen (American), Amy, Brian (British), Olivia (Australian), Kajal (Indian), Niamh (Irish), Ayanda (South African). Candidates pick one in the device check; hiring teams set one voice for all applicants in the interview settings. A typical interview speaks about 3,000–4,000 characters (roughly 5–6¢ with the default neural engine, 10–12¢ with generative). The voice endpoint only speaks lines the API itself signed for that interview, and lines that repeat (greetings, closings, the voice sample) are stored as audio and reused.
 
 ### 3. Deploy the web app
 

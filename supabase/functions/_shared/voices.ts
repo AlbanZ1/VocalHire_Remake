@@ -1,6 +1,6 @@
 // Natural interviewer voices (Amazon Polly). Shared by the edge function (validation, synthesis)
-// and the web app (voice picker). All of these voices exist in Polly's generative engine and
-// also have a neural variant, which is used automatically where generative isn't available.
+// and the web app (voice picker). Every voice here has a neural variant (the default engine) and a
+// generative variant (optional, more human-sounding, about twice the price).
 
 export type PollyEngine = "generative" | "neural";
 
